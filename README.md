@@ -9,7 +9,7 @@ This product is in pre-release stage.
 Set up your variables in .env.example
 
 ```bash
-cp .env.example
+cp .env.example .env
 ```
 
 ## Usage
