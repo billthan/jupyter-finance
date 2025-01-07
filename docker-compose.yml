@@ -1,0 +1,59 @@
+version: '3.8'
+x-environment:
+
+services:
+  db:
+    build:
+      context: ./db/postgres  
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - finance_network
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+
+  pgadmin:
+    build:
+      context: ./db/pgadmin4
+    ports:
+      - "80:80"
+    networks:
+      - finance_network
+    depends_on:
+      - db
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD}
+
+  ipynb:
+    build:
+      context: ./notebooks
+    ports:
+      - "8888:8888"
+    networks:
+      - finance_network
+    depends_on:
+      - db
+    environment:
+      - PLAID_CLIENT_ID=${PLAID_CLIENT_ID}
+      - PLAID_SECRET=${PLAID_SECRET}
+      - PLAID_ENV=${PLAID_ENV}
+      - PLAID_PRODUCTS=${PLAID_PRODUCTS}
+      - PLAID_COUNTRY_CODES=${PLAID_COUNTRY_CODES}
+      - PLAID_REDIRECT_URI= ${PLAID_REDIRECT_URI}
+
+    volumes:
+      - jupyter-data:/home/jovyan/work
+    command: start-notebook.py --NotebookApp.token='${JUPYTER_LAB_TOKEN}'
+
+networks:
+  finance_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  jupyter-data:
+    name: jupyter-data
