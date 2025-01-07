@@ -12,7 +12,7 @@ RUN conda install -c conda-forge \
     nodejs
     
 EXPOSE 8888
-COPY ./* /home/jovyan/work
+COPY ./*.ipynb /home/jovyan/work
 
 RUN chmod -R 777 /home/jovyan/work
 
