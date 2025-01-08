@@ -27,7 +27,7 @@ services:
     environment:
       - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL}
       - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD}
-
+    
   ipynb:
     build:
       context: ./notebooks
@@ -44,9 +44,14 @@ services:
       - PLAID_PRODUCTS=${PLAID_PRODUCTS}
       - PLAID_COUNTRY_CODES=${PLAID_COUNTRY_CODES}
       - PLAID_REDIRECT_URI= ${PLAID_REDIRECT_URI}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+
 
     volumes:
       - jupyter-data:/home/jovyan/work
+      - /Users/billthan/Desktop/budget/jupyter-finance:/home/jovyan/
+
     command: start-notebook.py --NotebookApp.token='${JUPYTER_LAB_TOKEN}'
 
 networks:

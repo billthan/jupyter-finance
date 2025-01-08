@@ -1,1 +1,7 @@
 .env
+.ipython
+.jupyter
+.local
+.npm
+.bash_history
+.DS_Store
