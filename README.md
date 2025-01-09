@@ -18,6 +18,10 @@ cp .env.example .env
 docker-compose up
 ```
 
+## Risks
+
+Plaid API public access tokens are not encrypted in database (yet). 
+
 ## Contributing
 
 Pull requests are welcome. For major changes, please open an issue first

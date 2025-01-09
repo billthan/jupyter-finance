@@ -18,4 +18,4 @@ RUN chmod -R 777 /home/jovyan/work
 
 
 
-#USER ${NB_UID}
+USER ${NB_UID}
