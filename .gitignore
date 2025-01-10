@@ -5,3 +5,6 @@
 .npm
 .bash_history
 .DS_Store
+.cache
+.config
+.mito
