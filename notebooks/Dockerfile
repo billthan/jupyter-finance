@@ -11,6 +11,9 @@ RUN conda install -c conda-forge \
     wheel \
     nodejs
     
+RUN pip install --no-cache-dir mitosheet
+RUN jupyter labextension enable mitosheet
+    
 EXPOSE 8888
 COPY ./*.ipynb /home/jovyan/work
 
