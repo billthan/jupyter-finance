@@ -1,4 +1,4 @@
-name: CI
+name: CI Test
 on: [workflow_dispatch, pull_request, push]
 
 jobs:
@@ -17,6 +17,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Set up dummy variables and test
+        run: |
           export PLAID_COUNTRY_CODES=US,CA
           export PLAID_PRODUCTS=transactions
           export PLAID_CLIENT_ID=TEST
@@ -26,7 +29,5 @@ jobs:
           export POSTGRES_USER=TEST
           export POSTGRES_PASSWORD=TEST
           export JUPYTER_LAB_TOKEN=TEST
+          echo "Starting test..."
           nbdev_test
-
-      # - name: Run nbdev CI
-      #   uses: fastai/workflows/nbdev-ci@master
