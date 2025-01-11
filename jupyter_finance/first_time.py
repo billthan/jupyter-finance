@@ -5,11 +5,8 @@ __all__ = ['email', 'phone', 'link_token', 'access_tokens']
 
 # %% ../nbs/00_first_time.ipynb 1
 import os
-from .helper_functions import *
+from .core import *
 
-
-# %% ../nbs/00_first_time.ipynb 2
-about()
 
 # %% ../nbs/00_first_time.ipynb 4
 email = os.getenv("USER_EMAIL", "default@email.com")

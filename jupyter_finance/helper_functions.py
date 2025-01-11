@@ -9,16 +9,11 @@ __all__ = ['PLAID_COUNTRY_CODES', 'PLAID_PRODUCTS', 'PLAID_CLIENT_ID', 'PLAID_SE
            'get_and_save_all_account_transactions', 'get_and_save_balance_history', 'about']
 
 # %% ../nbs/helper_functions.ipynb 2
-import os
-import uuid
-import json
-import datetime
-import requests
-import psycopg2
-import pdb
+import os, uuid, json, datetime, requests, psycopg2
 import pandas as pd
 from sqlalchemy import create_engine
 from typing import Optional, Dict, Any, List, Tuple
+from nbdev.showdoc import DocmentTbl
 
 
 # %% ../nbs/helper_functions.ipynb 3
@@ -35,147 +30,110 @@ POSTGRES_USER= os.environ['POSTGRES_USER']
 POSTGRES_PASSWORD= os.environ['POSTGRES_PASSWORD']
 
 # %% ../nbs/helper_functions.ipynb 5
-def plaid_post(endpoint: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    """ 
-    Makes a POST request to the Plaid API.
-    
-    Args:
-        endpoint (str): The specific Plaid API endpoint (e.g., "accounts/get").
-        payload (Dict[str, Any]): The JSON payload to be sent with the request.
-    
-    Returns:
-        Dict[str, Any]: The JSON response from the API as a dictionary.
+def plaid_post(
+    endpoint: str, # The specific Plaid API endpoint (e.g., "accounts/get"), refer to [Plaid API Docs](https://plaid.com/docs/api/)
+    payload: Dict[str, Any], # The JSON payload to be sent with the request
+) -> Dict[str, Any]: # Returns JSON response from Plaid API
     """
-    url = f"{PLAID_BASE_URL}/{endpoint}"
-    headers = {'Content-Type': 'application/json'}
-    response = requests.post(url, headers=headers, data=json.dumps(payload))
-    return response.json()
+    Makes a POST request to the Plaid API.
+    """
+    url = f"{PLAID_BASE_URL}/{endpoint}"  
+    headers = {'Content-Type': 'application/json'} 
+    response = requests.post(url, headers=headers, data=json.dumps(payload))  
+    return response.json()  
 
-def get_account(access_token: str) -> Dict[str, Any]:
+
+def get_account(
+    access_token: str  # The Plaid access token for the user account
+) -> Dict[str, Any]: # Returns Dictionary object of accounts
     """
     Retrieves account details from the Plaid API.
-    
-    Args:
-        access_token (str): The Plaid access token for the user account.
-    
-    Returns:
-        Dict[str, Any]: The response from the Plaid API containing account details.
     """
     payload = {
-        "client_id": PLAID_CLIENT_ID,
-        "secret": PLAID_SECRET,
-        "access_token": access_token
+        "client_id": PLAID_CLIENT_ID,  
+        "secret": PLAID_SECRET,        
+        "access_token": access_token   
     }
     accounts_response = plaid_post("accounts/get", payload)
-    return accounts_response
+    return accounts_response  
 
-def get_account_transactions(access_token: str) -> List[Dict[str, Any]]:
+
+def get_account_transactions(
+    access_token: str,  # The Plaid access token for the user account
+    start_date: str,    # The starting date for transactions (YYYY-MM-DD)
+    end_date: str       # The ending date for transactions (YYYY-MM-DD)
+) -> List[Dict[str, Any]]: # Returns List objects containing Dictionary objects related to account transactions
     """
     Retrieves all transactions for an account from the Plaid API.
-    
-    Args:
-        access_token (str): The Plaid access token for the user account.
-    
-    Returns:
-        List[Dict[str, Any]]: A list of transaction dictionaries retrieved from the API.
-    
-    Raises:
-        Exception: If an error occurs during the request to the Plaid API.
     """
     try:
-        transactions = []
+        transactions = []  # Initialize an empty list to hold transactions
         payload = {
-            "client_id": PLAID_CLIENT_ID,
-            "secret": PLAID_SECRET,
-            "access_token": access_token,
-            "start_date": "2024-01-01",
-            "end_date": "2024-12-31",
+            "client_id": PLAID_CLIENT_ID, 
+            "secret": PLAID_SECRET,       
+            "access_token": access_token,  
+            "start_date": start_date,      
+            "end_date": end_date,          
             "options": {
-                "count": 100,  # Number of transactions per request
-                "offset": 0    # Starting point for fetching transactions
+                "count": 100,  # Pagination
+                "offset": 0   
             }
         }
 
         while True:
-            transactions_response = plaid_post("transactions/get", payload)
-            transactions.extend(transactions_response.get("transactions", []))
+            transactions_response = plaid_post("transactions/get", payload)  
+            transactions.extend(transactions_response.get("transactions", [])) 
             
-            # Stop when the total transactions have been retrieved
             if len(transactions) >= transactions_response.get("total_transactions", 0):
                 break
             
-            # Update the offset to fetch the next batch
             payload["options"]["offset"] += 100
 
-        return transactions
+        return transactions  
     except Exception as e:
-        print(f"There was an error. Please report outputs of this cell to the developer:\n{e}\nResponse: {transactions_response}")
+        print(f"There was an error. Please report outputs of this cell to the developer:\n{e}")
         raise
 
 
 # %% ../nbs/helper_functions.ipynb 7
-def get_account_df(accounts_response: dict) -> pd.DataFrame:
+def get_account_df(
+    accounts_response: dict # Dictionary object containing accounts
+) -> pd.DataFrame: # Returns  Dataframe of individual account
     """
     Converts account information from the Plaid API response into a pandas DataFrame.
-    
-    Args:
-        accounts_response (dict): The response from the Plaid API containing account information.
-    
-    Returns:
-        pd.DataFrame: A DataFrame containing normalized account information.
     """
     return pd.json_normalize(accounts_response, sep='_')
 
 
-def get_accounts_df(access_tokens: List[Tuple[str]]) -> pd.DataFrame:
+def get_accounts_df(
+    access_tokens: List[Tuple[str]] # List object containing access tokens
+) -> pd.DataFrame: # Returns Dataframe of accounts
     """
     Retrieves and merges account information for multiple access tokens into a single pandas DataFrame.
-    
-    Args:
-        access_tokens (List[Tuple[str]]): A list of tuples containing access tokens.
-    
-    Returns:
-        pd.DataFrame: A DataFrame containing merged account information from all provided access tokens.
     """
     accounts_df_list = []
-    
+
     for single_access_token in access_tokens:
-        # Retrieve and normalize account data for each access token
         account_data = get_account(single_access_token[0])
         account_df = get_account_df(account_data)
-        print(account_df.head())  # Display the first few rows for debugging
+        print(account_df.head())
         display(account_df)
         accounts_df_list.append(account_df)
-    
-    # Pause execution for debugging (can be removed in production)
-    pdb.set_trace()
-    
-    # Merge all account DataFrames into one
-    merged_accounts_df = pd.concat(accounts_df_list, ignore_index=True)
-    
-    # Pause execution for debugging (can be removed in production)
-    pdb.set_trace()
 
-    return merged_accounts_df
+    return pd.concat(accounts_df_list, ignore_index=True)
 
 
-def get_transactions_df(access_tokens: List[Tuple[str]]) -> pd.DataFrame:
+def get_transactions_df(
+    access_tokens: List[Tuple[str]] # List object containing access tokens
+) -> pd.DataFrame: # Returns Dataframe of transactions
     """
     Retrieves and converts transaction data for multiple access tokens into a pandas DataFrame.
-    
-    Args:
-        access_tokens (List[Tuple[str]]): A list of tuples containing access tokens.
-    
-    Returns:
-        pd.DataFrame: A DataFrame containing normalized transaction data from all provided access tokens.
     """
     transactions_list = []
-    
+
     for single_access_token in access_tokens:
-        # Retrieve transactions for each access token
         transactions_list.extend(get_account_transactions(single_access_token[0]))
-    
-    # Normalize transaction data into a pandas DataFrame
+
     return pd.json_normalize(transactions_list)
 
 
@@ -185,8 +143,7 @@ def db_conn() -> Optional[psycopg2.extensions.connection]:
     Creates and returns a connection to the PostgreSQL database.
 
     Returns:
-        psycopg2.extensions.connection: A connection object to interact with the database.
-        None: If the connection fails.
+        Optional[psycopg2.extensions.connection]: A connection object to interact with the database, or None if the connection fails.
     """
     try:
         return psycopg2.connect(
@@ -200,22 +157,17 @@ def db_conn() -> Optional[psycopg2.extensions.connection]:
         return None
 
 
-def db_sql(query: str) -> pd.DataFrame:
+def db_sql(
+    query: str  # The string representation of SQL query to execute
+) -> pd.DataFrame: # Dataframe of executed SQL query
     """
-    Executes a SQL query and returns the result as a pandas DataFrame.
-
-    Args:
-        query (str): The SQL query to execute.
-
-    Returns:
-        pd.DataFrame: A DataFrame containing the query results.
+    Executes a defined SQL query and returns the result as a pandas DataFrame.
     """
     engine = create_engine(
         f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}/{POSTGRES_DB}"
     )
     try:
-        dataframe = pd.read_sql_query(query, engine)
-        return dataframe
+        return pd.read_sql_query(query, engine)
     except Exception as e:
         print(f"Error: {e}")
         return pd.DataFrame()
@@ -223,15 +175,10 @@ def db_sql(query: str) -> pd.DataFrame:
         engine.dispose()
 
 
-def get_stored_public_access_tokens() -> List[Tuple[str]]:
+def get_stored_public_access_tokens() -> List[Tuple[str]]: # Returns List Object with access tokens
     """
     Retrieves distinct Plaid access tokens from the local database.
-
-    Returns:
-        List[Tuple[str]]: A list of tuples containing access tokens.
     """
-    tokens = []
-
     try:
         db = db_conn()
         if not db:
@@ -243,24 +190,21 @@ def get_stored_public_access_tokens() -> List[Tuple[str]]:
         cur.close()
         db.close()
         print(f"Found {len(tokens)} accounts and their access tokens.")
-
         return tokens
     except Exception as e:
         print(f"There was an error in get_stored_public_access_tokens():\n{e}")
         return []
 
 
-def insert_account_df(access_token: str, accounts_response: dict) -> None:
+def insert_account_df(
+    access_token: str,  # The Plaid access token for the account
+    accounts_response: dict  # The response from the Plaid API containing account information
+) -> None:
     """
     Inserts account information and the associated access token into the database.
-
-    Args:
-        access_token (str): The Plaid access token for the account.
-        accounts_response (dict): The response from the Plaid API containing account information.
     """
     try:
         accounts_df = get_account_df(accounts_response['accounts'])
-
         db = db_conn()
         if not db:
             return
@@ -315,12 +259,11 @@ def insert_account_df(access_token: str, accounts_response: dict) -> None:
         print(f"There was an error in insert_account_df():\n{e}")
 
 
-def insert_transactions_df(transactions_df: pd.DataFrame) -> None:
+def insert_transactions_df(
+    transactions_df: pd.DataFrame  # A DataFrame containing transaction data
+) -> None:
     """
     Inserts transaction data into the database.
-
-    Args:
-        transactions_df (pd.DataFrame): A DataFrame containing transaction data.
     """
     try:
         db = db_conn()
@@ -398,12 +341,11 @@ def insert_transactions_df(transactions_df: pd.DataFrame) -> None:
         print(f"There was an error in insert_transactions_df():\n{e}")
 
 
-def upsert_account_balances_df(accounts_df: pd.DataFrame) -> None:
+def upsert_account_balances_df(
+    accounts_df: pd.DataFrame  # A DataFrame containing account balance data
+) -> None:
     """
     Inserts or updates account balance history in the database.
-
-    Args:
-        accounts_df (pd.DataFrame): A DataFrame containing account balance data.
     """
     try:
         db = db_conn()
@@ -444,16 +386,12 @@ def upsert_account_balances_df(accounts_df: pd.DataFrame) -> None:
 
 
 # %% ../nbs/helper_functions.ipynb 11
-def generate_link_token(email: str, phone: str) -> Optional[str]:
+def generate_link_token(
+    email: str,  # The user's email address
+    phone: str   # The user's phone number
+) -> Optional[str]:  # Returns the generated link token if successful, otherwise None
     """
     Generates a link token to authenticate with the Plaid API.
-
-    Args:
-        email (str): The user's email address.
-        phone (str): The user's phone number.
-
-    Returns:
-        Optional[str]: The generated link token if successful, otherwise None.
     """
     try:
         payload = {
@@ -465,60 +403,54 @@ def generate_link_token(email: str, phone: str) -> Optional[str]:
             "user": {
                 "client_user_id": str(uuid.uuid4()),
                 "phone_number": phone,
-                "email_address": email
+                "email_address": email,
             },
             "hosted_link": {},
-            "products": PLAID_PRODUCTS
+            "products": PLAID_PRODUCTS,
         }
         link_token_response = plaid_post("link/token/create", payload)
 
-        # Display the hosted link and expiration
         print(
-            "Navigate to this page and authenticate with your bank: ",
-            link_token_response.get("hosted_link_url", "No URL provided"),
-            "\nThis link expires: ",
-            link_token_response.get("expiration", "No expiration provided")
+            f"Navigate to this page and authenticate with your bank: "
+            f"{link_token_response.get('hosted_link_url', 'No URL provided')}"
         )
-        return link_token_response.get('link_token')
+        print(
+            f"This link expires: {link_token_response.get('expiration', 'No expiration provided')}"
+        )
+
+        return link_token_response.get("link_token")
 
     except Exception as e:
         print(f"There was an error in generate_link_token:\n{e}")
         return None
 
 
-def get_and_save_public_token(link_token: str) -> None:
+def get_and_save_public_token(
+    link_token: str  # The link token generated during the Plaid Link flow
+) -> None:
     """
-    Retrieves a public token using the link token and exchanges it for an access token.
-    The account information is then saved to the database.
-
-    Args:
-        link_token (str): The link token generated during the Plaid Link flow.
-
-    Returns:
-        None
+    Retrieves a public token using the link token, exchanges it for an access token, 
+    and saves the account information to the database.
     """
     exchange_response = ''
     access_token = ''
 
     try:
-        # Step 1: Retrieve link token details
         payload = {
             "client_id": PLAID_CLIENT_ID,
             "secret": PLAID_SECRET,
-            "link_token": link_token
+            "link_token": link_token,
         }
         link_token_details = plaid_post("link/token/get", payload)
 
-        # Extract the public token from the link sessions
         public_token = (
             link_token_details['link_sessions'][0]['results']['item_add_results'][0]['public_token']
         )
 
-        # Step 2: Exchange the public token for an access token
         payload = {
             "client_id": PLAID_CLIENT_ID,
             "secret": PLAID_SECRET,
-            "public_token": public_token
+            "public_token": public_token,
         }
         exchange_response = plaid_post("item/public_token/exchange", payload)
         access_token = exchange_response.get("access_token")
@@ -536,7 +468,6 @@ def get_and_save_public_token(link_token: str) -> None:
         print(f"There was an error in get_and_save_public_token:\n{e}\nResponse: {exchange_response}")
         return
 
-    # Step 3: Fetch account information and save to the database
     try:
         accounts_response = get_account(access_token)
         insert_account_df(access_token, accounts_response)
@@ -551,9 +482,10 @@ def get_and_save_all_account_transactions() -> None:
     and inserts the transactions into the database.
 
     Steps:
-    1. Fetch public access tokens from the database.
-    2. Retrieve transactions data for each account associated with the tokens.
-    3. Insert the retrieved transactions into the database.
+
+    * Fetch public access tokens from the database. `get_stored_public_access_tokens()`
+    * Retrieve transactions data for each account associated with the tokens. `get_transactions_df()`
+    * Insert the retrieved transactions into the database. `insert_transactions_df()`
 
     Returns:
         None
@@ -579,9 +511,10 @@ def get_and_save_balance_history() -> None:
     and updates the balance history in the database.
 
     Steps:
-    1. Fetch public access tokens from the database.
-    2. Retrieve account details for each account associated with the tokens.
-    3. Update the account balance history in the database.
+    
+    * Fetch public access tokens from the database.`get_stored_public_access_tokens()`
+    * Retrieve account details for each account associated with the tokens. `get_accounts_df()`
+    * Update the account balance history in the database. `upsert_account_balances_df()`
 
     Returns:
         None

@@ -4,4 +4,4 @@ website:
       - index.ipynb
       - 00_first_time.ipynb
       - 01_refresh.ipynb
-      - helper_functions.ipynb
+      - core.ipynb
