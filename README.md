@@ -35,18 +35,6 @@ Install latest from the GitHub
 $ pip install git+https://github.com/billthan/jupyter-finance.git
 ```
 
-or from [conda](https://anaconda.org/billthan/jupyter-finance)
-
-``` sh
-$ conda install -c billthan jupyter_finance
-```
-
-or from [pypi](https://pypi.org/project/jupyter-finance/)
-
-``` sh
-$ pip install jupyter_finance
-```
-
 ### Documentation
 
 Documentation can be found hosted on this GitHub
@@ -55,13 +43,3 @@ Documentation can be found hosted on this GitHub
 can find package manager specific guidelines on
 [conda](https://anaconda.org/billthan/jupyter-finance) and
 [pypi](https://pypi.org/project/jupyter-finance/) respectively.
-
-## How to use
-
-Fill me in please! Don’t forget code examples:
-
-``` python
-1+1
-```
-
-    2

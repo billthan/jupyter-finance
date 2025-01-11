@@ -5,5 +5,5 @@ website:
   title: "jupyter-finance"
   site-url: "https://billthan.github.io/jupyter-finance"
   description: "A Docker based solution leveraging Plaid API data to automate and store personal financial data in PostgreSQL for analysis in Jupyter Notebooks."
-  repo-branch: bthan-nbdev
+  repo-branch: main
   repo-url: "https://github.com/billthan/jupyter-finance"
