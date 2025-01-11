@@ -18,6 +18,7 @@ jobs:
           pip install -e ".[dev]"
           wget -nv https://www.quarto.org/download/latest/quarto-linux-amd64.deb
           sudo dpkg -i quarto*.deb
+          rm quarto*.deb
           pip install -r requirements.txt
           export PLAID_COUNTRY_CODES=US,CA
           export PLAID_PRODUCTS=transactions
