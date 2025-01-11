@@ -138,12 +138,10 @@ def get_transactions_df(
 
 
 # %% ../nbs/core.ipynb 9
-def db_conn() -> Optional[psycopg2.extensions.connection]:
+def db_conn(
+) -> psycopg2.extensions.connection:  # psycopg2 connection to database
     """
     Creates and returns a connection to the PostgreSQL database.
-
-    Returns:
-        Optional[psycopg2.extensions.connection]: A connection object to interact with the database, or None if the connection fails.
     """
     try:
         return psycopg2.connect(
@@ -483,9 +481,9 @@ def get_and_save_all_account_transactions() -> None:
 
     Steps:
 
-    * Fetch public access tokens from the database. `get_stored_public_access_tokens()`
-    * Retrieve transactions data for each account associated with the tokens. `get_transactions_df()`
-    * Insert the retrieved transactions into the database. `insert_transactions_df()`
+    * Fetch public access tokens from the database.
+    * Retrieve transactions data for each account associated with the tokens. 
+    * Insert the retrieved transactions into the database.
 
     Returns:
         None
@@ -512,10 +510,9 @@ def get_and_save_balance_history() -> None:
 
     Steps:
     
-    * Fetch public access tokens from the database.`get_stored_public_access_tokens()`
-    * Retrieve account details for each account associated with the tokens. `get_accounts_df()`
-    * Update the account balance history in the database. `upsert_account_balances_df()`
-
+    * Fetch public access tokens from the database.
+    * Retrieve account details for each account associated with the tokens. 
+    * Update the account balance history in the database. 
     Returns:
         None
     """
@@ -536,6 +533,9 @@ def get_and_save_balance_history() -> None:
 
 # %% ../nbs/core.ipynb 14
 def about():
+    """
+    Print environmental details for this instance of `jupyter-finance`
+    """
     print("="*60)
     print("="*60)
     print(f"Jupyter Finances")
