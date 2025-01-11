@@ -59,3 +59,7 @@ jobs:
         uses: actions/deploy-pages@v4
         with:
           artifact_name: github-pages
+      - name: Add link to workflow summary
+        run: |
+          REPO_NAME=${GITHUB_REPOSITORY##*/}
+          echo "Site is live [here](https://${{ github.repository_owner }}.github.io/${REPO_NAME}/)" >> $GITHUB_STEP_SUMMARY
