@@ -4,10 +4,7 @@ on:
     workflows: ["CI Test"]
     type: 
       - complete
-  push:
-    branches:
-      - main
-
+      
 permissions:
   contents: write
   pages: write
