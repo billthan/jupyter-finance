@@ -4,6 +4,11 @@ on:
     branches:
       - main
 
+workflow_run:
+  workflows: ["CI Test"]
+  type:
+    - complete
+    
 permissions:
   contents: write
   pages: write
