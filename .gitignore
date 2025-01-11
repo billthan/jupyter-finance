@@ -17,7 +17,7 @@ idx/
 .install
 conda/
 _site/
-_docs/
+#_docs/
 test_settings.ini
 
 *.bak
