@@ -8,15 +8,17 @@ __all__ = ['PLAID_COUNTRY_CODES', 'PLAID_PRODUCTS', 'PLAID_CLIENT_ID', 'PLAID_SE
            'upsert_account_balances_df', 'generate_link_token', 'get_and_save_public_token',
            'get_and_save_all_account_transactions', 'get_and_save_balance_history', 'about']
 
-# %% ../nbs/core.ipynb 2
+# %% ../nbs/core.ipynb 3
 import os, uuid, json, datetime, requests, psycopg2
 import pandas as pd
 from sqlalchemy import create_engine
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 from typing import Optional, Dict, Any, List, Tuple
 from nbdev.showdoc import DocmentTbl
 
 
-# %% ../nbs/core.ipynb 3
+# %% ../nbs/core.ipynb 4
 PLAID_COUNTRY_CODES = ['CA','US']
 PLAID_PRODUCTS = ['transactions']
 PLAID_CLIENT_ID= os.environ['PLAID_CLIENT_ID']
@@ -29,7 +31,7 @@ POSTGRES_HOST= "db"
 POSTGRES_USER= os.environ['POSTGRES_USER']
 POSTGRES_PASSWORD= os.environ['POSTGRES_PASSWORD']
 
-# %% ../nbs/core.ipynb 5
+# %% ../nbs/core.ipynb 6
 def plaid_post(
     endpoint: str, # The specific Plaid API endpoint (e.g., "accounts/get"), refer to [Plaid API Docs](https://plaid.com/docs/api/)
     payload: Dict[str, Any], # The JSON payload to be sent with the request
@@ -95,7 +97,7 @@ def get_account_transactions(
         raise
 
 
-# %% ../nbs/core.ipynb 7
+# %% ../nbs/core.ipynb 8
 def get_account_df(
     accounts_response: dict # Dictionary object containing accounts
 ) -> pd.DataFrame: # Returns  Dataframe of individual account
@@ -124,20 +126,25 @@ def get_accounts_df(
 
 
 def get_transactions_df(
-    access_tokens: List[Tuple[str]] # List object containing access tokens
-) -> pd.DataFrame: # Returns Dataframe of transactions
+    access_tokens: List[Tuple[str]],  # List object containing access tokens
+    start_date: str = None,           # Optional start date (YYYY-MM-DD)
+    end_date: str = None              # Optional end date (YYYY-MM-DD)
+) -> pd.DataFrame:
     """
     Retrieves and converts transaction data for multiple access tokens into a pandas DataFrame.
     """
     transactions_list = []
-
+    if not start_date:
+        start_date = (datetime.today() - relativedelta(years=1)).strftime('%Y-%m-%d')
+        end_date = datetime.today().strftime('%Y-%m-%d')
+    print(f"Starting to get all transactions between {start_date} and {end_date}")
     for single_access_token in access_tokens:
-        transactions_list.extend(get_account_transactions(single_access_token[0]))
+        transactions_list.extend(get_account_transactions(single_access_token[0], start_date, end_date))
 
     return pd.json_normalize(transactions_list)
 
 
-# %% ../nbs/core.ipynb 9
+# %% ../nbs/core.ipynb 10
 def db_conn(
 ) -> psycopg2.extensions.connection:  # psycopg2 connection to database
     """
@@ -196,7 +203,9 @@ def get_stored_public_access_tokens() -> List[Tuple[str]]: # Returns List Object
 
 def insert_account_df(
     access_token: str,  # The Plaid access token for the account
-    accounts_response: dict  # The response from the Plaid API containing account information
+    accounts_response: dict,  # The response from the Plaid API containing account information
+    email: str, # The user email
+    phone: str, # The phone number associated with user
 ) -> None:
     """
     Inserts account information and the associated access token into the database.
@@ -383,7 +392,7 @@ def upsert_account_balances_df(
         print(f"There was an error in upsert_account_balances_df():\n{e}")
 
 
-# %% ../nbs/core.ipynb 11
+# %% ../nbs/core.ipynb 12
 def generate_link_token(
     email: str,  # The user's email address
     phone: str   # The user's phone number
@@ -424,7 +433,9 @@ def generate_link_token(
 
 
 def get_and_save_public_token(
-    link_token: str  # The link token generated during the Plaid Link flow
+    link_token: str, # The link token generated during the Plaid Link flow
+    email: str,  # The user's email address
+    phone: str   # The user's phone number
 ) -> None:
     """
     Retrieves a public token using the link token, exchanges it for an access token, 
@@ -468,12 +479,12 @@ def get_and_save_public_token(
 
     try:
         accounts_response = get_account(access_token)
-        insert_account_df(access_token, accounts_response)
+        insert_account_df(access_token, accounts_response, email, phone)
     except Exception as e:
         print(f"There was an error while saving account information:\n{e}")
 
 
-# %% ../nbs/core.ipynb 13
+# %% ../nbs/core.ipynb 14
 def get_and_save_all_account_transactions() -> None:
     """
     Retrieves all account transactions for stored public access tokens
@@ -531,7 +542,7 @@ def get_and_save_balance_history() -> None:
         print(f"An error occurred in get_and_save_balance_history:\n{e}")
 
 
-# %% ../nbs/core.ipynb 14
+# %% ../nbs/core.ipynb 15
 def about():
     """
     Print environmental details for this instance of `jupyter-finance`
@@ -539,8 +550,7 @@ def about():
     print("="*60)
     print("="*60)
     print(f"Jupyter Finances")
-    # Date/Time
-    print(f"Current Date and Time: {datetime.datetime.now()}")
+    print(f"Current Date and Time: {datetime.now()}")
     
     print("="*60)
     print(f"Plaid API ({PLAID_ENV})")

@@ -30,7 +30,7 @@ services:
     
   ipynb:
     build:
-      context: ./nbs
+      context: .
     ports:
       - "8888:8888"
     networks:
