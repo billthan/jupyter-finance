@@ -6,7 +6,7 @@ on:
       - completed
     branches:
       - main
-      
+
 permissions:
   contents: write
   pages: write
@@ -36,13 +36,15 @@ jobs:
           # Export environment variables
           export PLAID_COUNTRY_CODES=US,CA
           export PLAID_PRODUCTS=transactions
-          export PLAID_CLIENT_ID=test
-          export PLAID_SECRET=test
+          export PLAID_CLIENT_ID=TEST
+          export PLAID_SECRET=TEST
           export PLAID_ENV=sandbox
-          export POSTGRES_HOST=test
-          export POSTGRES_USER=test
-          export POSTGRES_PASSWORD=test
-          export JUPYTER_LAB_TOKEN=test
+          export POSTGRES_HOST=TEST
+          export POSTGRES_USER=TEST
+          export POSTGRES_ENCRYPTION_KEY=TEST
+          export POSTGRES_PASSWORD=TEST
+          export JUPYTER_LAB_TOKEN=TEST
+          
           nbdev_docs
           
       - name: Upload static files as artifact
