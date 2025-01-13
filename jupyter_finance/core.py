@@ -2,10 +2,10 @@
 
 # %% auto 0
 __all__ = ['PLAID_COUNTRY_CODES', 'PLAID_PRODUCTS', 'PLAID_CLIENT_ID', 'PLAID_SECRET', 'PLAID_ENV', 'PLAID_BASE_URL',
-           'POSTGRES_DB', 'POSTGRES_HOST', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'plaid_post', 'get_account',
-           'get_account_transactions', 'get_account_df', 'get_accounts_df', 'get_transactions_df', 'db_conn', 'db_sql',
-           'get_stored_public_access_tokens', 'insert_account_df', 'insert_transactions_df',
-           'upsert_account_balances_df', 'generate_link_token', 'get_and_save_public_token',
+           'POSTGRES_DB', 'POSTGRES_HOST', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_ENCRYPTION_KEY',
+           'plaid_post', 'get_account', 'get_account_transactions', 'get_account_df', 'get_accounts_df',
+           'get_transactions_df', 'db_conn', 'db_sql', 'get_stored_public_access_tokens', 'insert_account_df',
+           'insert_transactions_df', 'upsert_account_balances_df', 'generate_link_token', 'get_and_save_public_token',
            'get_and_save_all_account_transactions', 'get_and_save_balance_history', 'about']
 
 # %% ../nbs/core.ipynb 3
@@ -30,6 +30,7 @@ POSTGRES_DB="finances"
 POSTGRES_HOST= "db"
 POSTGRES_USER= os.environ['POSTGRES_USER']
 POSTGRES_PASSWORD= os.environ['POSTGRES_PASSWORD']
+POSTGRES_ENCRYPTION_KEY=os.environ['POSTGRES_ENCRYPTION_KEY']
 
 # %% ../nbs/core.ipynb 6
 def plaid_post(
@@ -190,7 +191,14 @@ def get_stored_public_access_tokens() -> List[Tuple[str]]: # Returns List Object
             return []
 
         cur = db.cursor()
-        cur.execute("SELECT DISTINCT plaid_access_token FROM accounts;")
+        # Decrypt the access token using pgp_sym_decrypt
+        query = """
+            SELECT DISTINCT 
+                pgp_sym_decrypt(plaid_access_token::bytea, %s) AS decrypted_access_token
+            FROM accounts;
+        """
+        print(query)
+        cur.execute(query, (str(POSTGRES_ENCRYPTION_KEY),))
         tokens = cur.fetchall()
         cur.close()
         db.close()
@@ -199,7 +207,6 @@ def get_stored_public_access_tokens() -> List[Tuple[str]]: # Returns List Object
     except Exception as e:
         print(f"There was an error in get_stored_public_access_tokens():\n{e}")
         return []
-
 
 def insert_account_df(
     access_token: str,  # The Plaid access token for the account
@@ -232,7 +239,7 @@ def insert_account_df(
                     plaid_access_token
                 ) 
                 VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, pgp_sym_encrypt(%s::text, %s)
                 )
                 ON CONFLICT (account_id) 
                 DO UPDATE SET
@@ -244,7 +251,7 @@ def insert_account_df(
                     type = EXCLUDED.type,
                     user_email = EXCLUDED.user_email,
                     user_phone = EXCLUDED.user_phone,
-                    plaid_access_token = EXCLUDED.plaid_access_token;
+                    plaid_access_token = pgp_sym_encrypt(EXCLUDED.plaid_access_token::text, %s);
             """, (
                 account['account_id'],
                 account['mask'],
@@ -256,6 +263,8 @@ def insert_account_df(
                 email,
                 phone,
                 access_token,
+                POSTGRES_ENCRYPTION_KEY,
+                POSTGRES_ENCRYPTION_KEY
             ))
 
         db.commit()

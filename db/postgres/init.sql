@@ -13,7 +13,7 @@ CREATE TABLE accounts (
     type VARCHAR(255),
     user_email VARCHAR(255),
     user_phone VARCHAR(20),
-    plaid_access_token VARCHAR(255)
+    plaid_access_token BYTEA
 );
 
 CREATE TABLE accounts_balance_history (

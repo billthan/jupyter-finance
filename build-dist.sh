@@ -6,6 +6,9 @@ set -e
 # Define the dist folder
 DIST_FOLDER="dist"
 
+echo "running nbdev_export"
+nbdev_export
+
 # Remove old .tar.gz files
 echo "Cleaning up old tar.gz files in $DIST_FOLDER..."
 rm -f $DIST_FOLDER/*.tar.gz
