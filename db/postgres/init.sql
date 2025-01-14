@@ -58,5 +58,12 @@ SELECT DISTINCT ON (account_id) *
 FROM accounts_balance_history
 ORDER BY account_id, balances_datetime DESC;
 
+CREATE TABLE fin_refresh (
+    id SERIAL PRIMARY KEY,  
+    refresh_time TIMESTAMP,
+	refresh_status boolean,
+	refresh_description VARCHAR(255)
+);
+
 
 
