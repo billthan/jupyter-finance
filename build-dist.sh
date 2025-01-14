@@ -3,11 +3,15 @@
 # Exit immediately if a command exits with a non-zero status
 set -e
 
-# Define the dist folder
 DIST_FOLDER="dist"
 
+echo "running nbdev_clean"
+nbdev_clean
 echo "running nbdev_export"
 nbdev_export
+echo "running nbdev_readme and nbdev_docs"
+nbdev_readme
+nbdev_docs
 
 # Remove old .tar.gz files
 echo "Cleaning up old tar.gz files in $DIST_FOLDER..."

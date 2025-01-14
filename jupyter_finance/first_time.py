@@ -4,6 +4,6 @@
 __all__ = []
 
 # %% ../nbs/00_first_time.ipynb 2
-import os
 from .core import *
+import os
 

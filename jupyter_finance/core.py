@@ -5,8 +5,9 @@ __all__ = ['PLAID_COUNTRY_CODES', 'PLAID_PRODUCTS', 'PLAID_CLIENT_ID', 'PLAID_SE
            'POSTGRES_DB', 'POSTGRES_HOST', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_ENCRYPTION_KEY',
            'plaid_post', 'get_account', 'get_account_transactions', 'get_account_df', 'get_accounts_df',
            'get_transactions_df', 'db_conn', 'db_sql', 'get_stored_public_access_tokens', 'insert_account_df',
-           'insert_transactions_df', 'upsert_account_balances_df', 'generate_link_token', 'get_and_save_public_token',
-           'get_and_save_all_account_transactions', 'get_and_save_balance_history', 'about']
+           'insert_transactions_df', 'upsert_account_balances_df', 'get_last_successful_refresh', 'update_last_refresh',
+           'generate_link_token', 'get_and_save_public_token', 'get_and_save_all_account_transactions',
+           'get_and_save_balance_history', 'about']
 
 # %% ../nbs/core.ipynb 3
 import os, uuid, json, datetime, requests, psycopg2
@@ -15,7 +16,7 @@ from sqlalchemy import create_engine
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from typing import Optional, Dict, Any, List, Tuple
-from nbdev.showdoc import DocmentTbl
+
 
 
 # %% ../nbs/core.ipynb 4
@@ -27,10 +28,10 @@ PLAID_ENV = os.environ['PLAID_ENV']
 PLAID_BASE_URL = f'https://{PLAID_ENV}.plaid.com'
 
 POSTGRES_DB="finances"
-POSTGRES_HOST= "db"
+POSTGRES_HOST=os.environ['POSTGRES_HOST']
 POSTGRES_USER= os.environ['POSTGRES_USER']
 POSTGRES_PASSWORD= os.environ['POSTGRES_PASSWORD']
-POSTGRES_ENCRYPTION_KEY=os.environ['POSTGRES_ENCRYPTION_KEY']
+POSTGRES_ENCRYPTION_KEY = os.environ['POSTGRES_ENCRYPTION_KEY']
 
 # %% ../nbs/core.ipynb 6
 def plaid_post(
@@ -94,7 +95,7 @@ def get_account_transactions(
 
         return transactions  
     except Exception as e:
-        print(f"There was an error. Please report outputs of this cell to the developer:\n{e}")
+        print(f"An error occurred in get_account_transactions() \n{e}")
         raise
 
 
@@ -107,7 +108,6 @@ def get_account_df(
     """
     return pd.json_normalize(accounts_response, sep='_')
 
-
 def get_accounts_df(
     access_tokens: List[Tuple[str]] # List object containing access tokens
 ) -> pd.DataFrame: # Returns Dataframe of accounts
@@ -117,12 +117,8 @@ def get_accounts_df(
     accounts_df_list = []
 
     for single_access_token in access_tokens:
-        account_data = get_account(single_access_token[0])
-        account_df = get_account_df(account_data)
-        print(account_df.head())
-        display(account_df)
-        accounts_df_list.append(account_df)
-
+        account_data = get_account_df(get_account(single_access_token[0])['accounts'])
+        accounts_df_list.append(account_data)
     return pd.concat(accounts_df_list, ignore_index=True)
 
 
@@ -197,7 +193,6 @@ def get_stored_public_access_tokens() -> List[Tuple[str]]: # Returns List Object
                 pgp_sym_decrypt(plaid_access_token::bytea, %s) AS decrypted_access_token
             FROM accounts;
         """
-        print(query)
         cur.execute(query, (str(POSTGRES_ENCRYPTION_KEY),))
         tokens = cur.fetchall()
         cur.close()
@@ -367,7 +362,6 @@ def upsert_account_balances_df(
         db = db_conn()
         if not db:
             return
-
         cur = db.cursor()
         for _, account in accounts_df.iterrows():
             cur.execute("""
@@ -390,16 +384,61 @@ def upsert_account_balances_df(
                 account['balances_iso_currency_code'],
                 account['balances_limit'],
                 account['balances_unofficial_currency_code'],
-                datetime.datetime.now(),
+                datetime.now(),
             ))
 
         db.commit()
         cur.close()
         db.close()
-        print(f"Successfully updated {accounts_df.shape[0]} account balances into the database.")
+        print(f"Successfully updated {accounts_df.shape[0]} account balances into the database as of {datetime.now()}")
+
     except Exception as e:
         print(f"There was an error in upsert_account_balances_df():\n{e}")
 
+def get_last_successful_refresh( 
+    )-> str: # Return last successful refresh of transaction data
+    """
+    Query database to check when the last successful refresh was
+    """
+    try:
+        query = """ 
+        SELECT id, refresh_time, refresh_status, refresh_description
+            FROM public.fin_refresh
+        WHERE refresh_status = TRUE
+        ORDER BY refresh_time DESC
+        LIMIT 1;
+        """
+
+        return (db_sql(query)).loc[0, 'refresh_time']
+    except Exception as e:
+        print(f"There was an error in get_last_successful_refresh():\n{e}")
+        return []
+    
+def update_last_refresh(success=True, # Assumes that refresh was successful
+                        msg="Refresh was successful" # Refresh message
+    )-> None:
+    """
+    Update database to log refresh time and status
+    """
+    try:
+        # Define the SQL query
+        query = """
+        INSERT INTO public.fin_refresh (refresh_time, refresh_status, refresh_description)
+        VALUES (%s, %s, %s);
+        """
+        refresh_time = datetime.now()
+
+        connection = db_conn()
+        if connection is None:
+            print("Failed to connect to the database. Cannot execute the query.")
+            return
+
+        with connection.cursor() as cursor:
+            cursor.execute(query, (refresh_time, success, msg))
+            connection.commit()
+            print("Refresh record successfully inserted into the database.")
+    except Exception as e:
+        print(f"There was an error in update_last_refresh():\n{e}")
 
 # %% ../nbs/core.ipynb 12
 def generate_link_token(
@@ -490,11 +529,11 @@ def get_and_save_public_token(
         accounts_response = get_account(access_token)
         insert_account_df(access_token, accounts_response, email, phone)
     except Exception as e:
-        print(f"There was an error while saving account information:\n{e}")
+        print(f"There was an error while saving account information in get_and_save_public_token:\n{e}")
 
 
 # %% ../nbs/core.ipynb 14
-def get_and_save_all_account_transactions() -> None:
+def get_and_save_all_account_transactions(first_time=False) -> None:
     """
     Retrieves all account transactions for stored public access tokens
     and inserts the transactions into the database.
@@ -502,7 +541,7 @@ def get_and_save_all_account_transactions() -> None:
     Steps:
 
     * Fetch public access tokens from the database.
-    * Retrieve transactions data for each account associated with the tokens. 
+    * Retrieve transactions data for each account associated with the tokens. (2 cases, First time load or Incremental) 
     * Insert the retrieved transactions into the database.
 
     Returns:
@@ -511,15 +550,29 @@ def get_and_save_all_account_transactions() -> None:
     try:
         # Step 1: Fetch public access tokens
         access_tokens = get_stored_public_access_tokens()
-
         # Step 2: Retrieve all transactions as a DataFrame
-        transactions_df = get_transactions_df(access_tokens)
+        # Step 2A: First Time Load
+        if first_time:
+            transactions_df = get_transactions_df(access_tokens)
+            insert_transactions_df(transactions_df)
 
-        # Step 3: Insert transactions into the database
-        insert_transactions_df(transactions_df)
-        print("Successfully retrieved and saved all account transactions.")
+        # Step 2B: Incremental load
+        else:
+            start_date = get_last_successful_refresh().strftime('%Y-%m-%d')
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d')
+            today_date = datetime.today()
+            date_diff = (today_date - start_date_obj).days
+            if date_diff >= 1:
+                start_date = get_last_successful_refresh().strftime('%Y-%m-%d')
+                transactions_df = get_transactions_df(access_tokens, start_date, datetime.today().strftime('%Y-%m-%d'))
+                insert_transactions_df(transactions_df)
+                print("Successfully retrieved and saved all account transactions.")
+                update_last_refresh()
+            else:
+                print("Data was already refreshed today.")
 
     except Exception as e:
+        update_last_refresh(False, e)
         print(f"An error occurred in get_and_save_all_account_transactions:\n{e}")
 
 
@@ -533,6 +586,7 @@ def get_and_save_balance_history() -> None:
     * Fetch public access tokens from the database.
     * Retrieve account details for each account associated with the tokens. 
     * Update the account balance history in the database. 
+    
     Returns:
         None
     """
@@ -545,10 +599,9 @@ def get_and_save_balance_history() -> None:
 
         # Step 3: Update account balance history in the database
         upsert_account_balances_df(accounts_df)
-        print("Successfully retrieved and saved account balance history.")
 
     except Exception as e:
-        print(f"An error occurred in get_and_save_balance_history:\n{e}")
+        print(f"An error occurred in get_and_save_balance_history()\n{e}")
 
 
 # %% ../nbs/core.ipynb 15

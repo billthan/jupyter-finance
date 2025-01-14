@@ -17,14 +17,12 @@ started.
 Set up all your variables in `.env.example` first
 
 ``` sh
-
 $ cp .env.example .env
 ```
 
 ### Install jupyter_finance in Development mode
 
 ``` sh
-
 # make sure jupyter_finance package is installed in development mode
 $ pip install -e .
 
@@ -46,13 +44,6 @@ $ docker-compose up --build
 ## Usage
 
 ### Installation
-
-Install latest from the GitHub
-[repository](https://github.com/billthan/jupyter-finance):
-
-``` sh
-$ pip install git+https://github.com/billthan/jupyter-finance.git
-```
 
 ### Documentation
 
