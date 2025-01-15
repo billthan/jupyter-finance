@@ -65,5 +65,30 @@ CREATE TABLE fin_refresh (
 	refresh_description VARCHAR(255)
 );
 
+CREATE TABLE budget (
+    id SERIAL PRIMARY KEY,  
+    name VARCHAR(255),
+    description VARCHAR(255),
+    balance_limit FLOAT,
+    is_over BOOLEAN,
+    is_deleted BOOLEAN
+);
 
+CREATE TABLE budget_history (
+    id SERIAL PRIMARY KEY,
+    budget_id INT, 
+    balance FLOAT,
+    under_limit BOOLEAN,
+    update_time TIMESTAMP,
+    CONSTRAINT fk_budget FOREIGN KEY (budget_id) REFERENCES budget(id)
+);
+
+CREATE TABLE budgeted_transaction (
+    id SERIAL PRIMARY KEY,  
+    transaction_id VARCHAR(255),
+    budget_id INT, 
+    verified_date TIMESTAMP,
+    CONSTRAINT fk_transaction FOREIGN KEY (transaction_id) REFERENCES transactions(transaction_id),
+    CONSTRAINT fk_budget FOREIGN KEY (budget_id) REFERENCES budget(id)
+);
 

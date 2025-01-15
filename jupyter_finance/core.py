@@ -6,8 +6,8 @@ __all__ = ['PLAID_COUNTRY_CODES', 'PLAID_PRODUCTS', 'PLAID_CLIENT_ID', 'PLAID_SE
            'plaid_post', 'get_account', 'get_account_transactions', 'get_account_df', 'get_accounts_df',
            'get_transactions_df', 'db_conn', 'db_sql', 'get_stored_public_access_tokens', 'insert_account_df',
            'insert_transactions_df', 'upsert_account_balances_df', 'get_last_successful_refresh', 'update_last_refresh',
-           'generate_link_token', 'get_and_save_public_token', 'get_and_save_all_account_transactions',
-           'get_and_save_balance_history', 'about']
+           'insert_new_budget', 'get_all_active_budgets', 'generate_link_token', 'get_and_save_public_token',
+           'get_and_save_all_account_transactions', 'get_and_save_balance_history', 'about']
 
 # %% ../nbs/core.ipynb 3
 import os, uuid, json, datetime, requests, psycopg2
@@ -439,6 +439,45 @@ def update_last_refresh(success=True, # Assumes that refresh was successful
             print("Refresh record successfully inserted into the database.")
     except Exception as e:
         print(f"There was an error in update_last_refresh():\n{e}")
+
+def insert_new_budget(
+        name: str, # Budget Name
+        description: str, # Budget Description
+        limit: float # Maximum value for budget
+)-> None:
+    """
+    Insert a new budget record into the database.
+    """
+    try:
+        # Define the SQL query
+        query = """
+        INSERT INTO budget (name, description, balance_limit, is_over, is_deleted)
+        VALUES (%s, %s, %s, False, False);
+        """
+
+        # Establish the database connection
+        connection = db_conn()
+        if connection is None:
+            print("Failed to connect to the database. Cannot add budget.")
+            return
+
+        # Execute the query
+        with connection.cursor() as cursor:
+            cursor.execute(query, (name, description, limit))
+            connection.commit()
+            print("Budget successfully inserted into the database.")
+    except Exception as e:
+        print(f"Error in insert_new_budget(): {e}")
+    finally:
+        # Ensure the connection is properly closed
+        if connection:
+            connection.close()
+
+def get_all_active_budgets()-> pd.DataFrame:
+    """
+    Returns dataframe containig budgets that are active
+    """
+    return db_sql("SELECT * FROM budget WHERE is_deleted = false")
 
 # %% ../nbs/core.ipynb 12
 def generate_link_token(
