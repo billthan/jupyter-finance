@@ -2,7 +2,9 @@ website:
   sidebar:
     contents:
       - index.ipynb
-      - 00_first_time.ipynb
+      - 00_configuration.ipynb
       - 01_refresh.ipynb
-      - 02_budget.ipynb
       - core.ipynb
+      - docs_budget.ipynb
+      - docs_database.ipynb
+      - docs_security.ipynb
