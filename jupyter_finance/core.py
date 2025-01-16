@@ -418,7 +418,7 @@ def update_last_refresh(success=True, # Assumes that refresh was successful
                         msg="Refresh was successful" # Refresh message
     )-> None:
     """
-    Update database to log refresh time and status
+    Update database to log refresh time and status. If an error is thrown, the `msg` committed to database will print stack trace
     """
     try:
         # Define the SQL query
@@ -441,29 +441,34 @@ def update_last_refresh(success=True, # Assumes that refresh was successful
         print(f"There was an error in update_last_refresh():\n{e}")
 
 def insert_new_budget(
-        name: str, # Budget Name
-        description: str, # Budget Description
-        limit: float # Maximum value for budget
+        name: str, # String Budget Name
+        description: str, # String Budget Description
+        limit: float, # Maximum value for Budget
+        cadence: str = "weekly", # String, one of ['weekly', 'biweekly', 'monthly', 'yearly']
+        date_of_week: str ="sun" # String, one of [ 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] 
 )-> None:
     """
     Insert a new budget record into the database.
     """
+    if cadence not in ['weekly', 'biweekly', 'monthly', 'yearly'] or date_of_week not in ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']:
+        print("Parameters provided is not valid. See https://billthan.github.io/jupyter-finance/core.html#insert_new_budget")    
+        return
+    
     try:
         # Define the SQL query
         query = """
-        INSERT INTO budget (name, description, balance_limit, is_over, is_deleted)
-        VALUES (%s, %s, %s, False, False);
+        INSERT INTO budget (name, description, balance_limit, refresh_cadence, refresh_day_of_week, is_deleted)
+        VALUES (%s, %s, %s, %s, %s, False);
         """
 
         # Establish the database connection
         connection = db_conn()
         if connection is None:
-            print("Failed to connect to the database. Cannot add budget.")
+            print("Failed to connect to the database. insert_new_budget()")
             return
-
         # Execute the query
         with connection.cursor() as cursor:
-            cursor.execute(query, (name, description, limit))
+            cursor.execute(query, (name, description, limit, cadence, date_of_week))
             connection.commit()
             print("Budget successfully inserted into the database.")
     except Exception as e:

@@ -67,28 +67,30 @@ CREATE TABLE fin_refresh (
 
 CREATE TABLE budget (
     id SERIAL PRIMARY KEY,  
-    name VARCHAR(255),
-    description VARCHAR(255),
-    balance_limit FLOAT,
-    is_over BOOLEAN,
-    is_deleted BOOLEAN
+    name VARCHAR(255) NOT NULL,                    
+    description VARCHAR(255),                      
+    balance_limit NUMERIC(10, 2) NOT NULL,         
+    refresh_cadence VARCHAR(20) NOT NULL,          
+    refresh_day_of_week VARCHAR(10),             
+    is_deleted BOOLEAN DEFAULT FALSE              
 );
 
-CREATE TABLE budget_history (
-    id SERIAL PRIMARY KEY,
-    budget_id INT, 
-    balance FLOAT,
-    under_limit BOOLEAN,
-    update_time TIMESTAMP,
-    CONSTRAINT fk_budget FOREIGN KEY (budget_id) REFERENCES budget(id)
+CREATE TABLE budget_batch (
+    id SERIAL PRIMARY KEY,  
+    budget_id INT NOT NULL,                        
+    start_date TIMESTAMP NOT NULL,                
+    end_date TIMESTAMP NOT NULL,                
+    current_balance NUMERIC(10, 2) NOT NULL,      
+    under_limit BOOLEAN NOT NULL,                  
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_budget FOREIGN KEY (budget_id) REFERENCES budget(id) ON DELETE CASCADE
 );
 
 CREATE TABLE budgeted_transaction (
     id SERIAL PRIMARY KEY,  
-    transaction_id VARCHAR(255),
-    budget_id INT, 
-    verified_date TIMESTAMP,
-    CONSTRAINT fk_transaction FOREIGN KEY (transaction_id) REFERENCES transactions(transaction_id),
-    CONSTRAINT fk_budget FOREIGN KEY (budget_id) REFERENCES budget(id)
+    batch_id INT NOT NULL,                     
+    transaction_id VARCHAR(255) NOT NULL,        
+    verified_date TIMESTAMP,                      
+    CONSTRAINT fk_batch FOREIGN KEY (batch_id) REFERENCES budget_batch(id) ON DELETE CASCADE,
+    CONSTRAINT fk_transaction FOREIGN KEY (transaction_id) REFERENCES transactions(transaction_id)
 );
-

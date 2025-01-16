@@ -38,5 +38,4 @@ d = { 'settings': { 'branch': 'main',
                                                                                     'jupyter_finance/core.py'),
                                       'jupyter_finance.core.upsert_account_balances_df': ( 'core.html#upsert_account_balances_df',
                                                                                            'jupyter_finance/core.py')},
-            'jupyter_finance.first_time': {},
             'jupyter_finance.refresh': {}}}

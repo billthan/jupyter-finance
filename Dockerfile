@@ -19,7 +19,7 @@ COPY ./dist/*.tar.gz ./latest.tar.gz
 RUN pip install ./latest.tar.gz
 
 # copy all notebooks to container
-COPY ./nbs/*.ipynb /home/jovyan/work
+COPY ./nbs/0*.ipynb /home/jovyan/work
 RUN chmod -R 777 /home/jovyan/work
 
 WORKDIR /home/jovyan/work
