@@ -3,21 +3,20 @@
 # %% auto 0
 __all__ = ['PLAID_COUNTRY_CODES', 'PLAID_PRODUCTS', 'PLAID_CLIENT_ID', 'PLAID_SECRET', 'PLAID_ENV', 'PLAID_BASE_URL',
            'POSTGRES_DB', 'POSTGRES_HOST', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_ENCRYPTION_KEY',
-           'plaid_post', 'get_account', 'get_account_transactions', 'get_account_df', 'get_accounts_df',
-           'get_transactions_df', 'db_conn', 'db_sql', 'get_stored_public_access_tokens', 'insert_account_df',
-           'insert_transactions_df', 'upsert_account_balances_df', 'get_last_successful_refresh', 'update_last_refresh',
-           'insert_new_budget', 'get_all_active_budgets', 'generate_link_token', 'get_and_save_public_token',
-           'get_and_save_all_account_transactions', 'get_and_save_balance_history', 'about']
+           'calculate_end_date', 'plaid_post', 'get_account', 'get_account_transactions', 'get_account_df',
+           'get_accounts_df', 'get_transactions_df', 'db_conn', 'db_sql', 'get_stored_public_access_tokens',
+           'insert_account_df', 'insert_transactions_df', 'upsert_account_balances_df', 'get_last_successful_refresh',
+           'update_last_refresh', 'insert_new_budget', 'get_all_active_budgets', 'get_budget_details',
+           'get_latest_budget_batch', 'insert_new_budget_batch', 'generate_link_token', 'get_and_save_public_token',
+           'run_budgetting_tasks', 'get_and_save_all_account_transactions', 'get_and_save_balance_history', 'about']
 
 # %% ../nbs/core.ipynb 3
-import os, uuid, json, datetime, requests, psycopg2
+import os, uuid, json, requests, psycopg2
 import pandas as pd
 from sqlalchemy import create_engine
-from datetime import datetime
+from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from typing import Optional, Dict, Any, List, Tuple
-
-
 
 # %% ../nbs/core.ipynb 4
 PLAID_COUNTRY_CODES = ['CA','US']
@@ -34,6 +33,45 @@ POSTGRES_PASSWORD= os.environ['POSTGRES_PASSWORD']
 POSTGRES_ENCRYPTION_KEY=os.environ['POSTGRES_ENCRYPTION_KEY']
 
 # %% ../nbs/core.ipynb 6
+def calculate_end_date(
+        start_date: datetime, # (datetime): The starting date for the budget batch.
+        budget_details: dict # (dict): Dictionary containing budget details, including cadence and refresh day.
+) -> datetime: # datetime: The calculated end date.
+
+    """
+    Calculates the end date based on the budget details (refresh cadence and day of the week).
+    """
+    cadence = budget_details.get('refresh_cadence', '').lower()
+    refresh_day_of_week = budget_details.get('refresh_day_of_week', '').lower()
+
+    # Map the refresh_day_of_week to a number (Monday=0, Sunday=6)
+    days_of_week = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+    target_day = days_of_week.index(refresh_day_of_week)
+    
+    # Calculate the number of days until the next target day
+    days_until_target = (target_day - start_date.weekday() + 7) % 7
+    if days_until_target == 0:  # If today is the target day, move to the next occurrence
+        days_until_target = 7
+    
+    # Calculate the end date based on the cadence
+    if cadence == 'weekly':
+        end_date = start_date + timedelta(days=days_until_target)
+    elif cadence == 'biweekly':
+        end_date = start_date + timedelta(days=days_until_target + 7)  
+    elif cadence == 'monthly':
+        next_month = (start_date.month % 12) + 1
+        year_increment = (start_date.month + 1) // 13  
+        end_date = start_date.replace(
+            year=start_date.year + year_increment,
+            month=next_month
+        )
+        while end_date.weekday() != target_day:
+            end_date += timedelta(days=1)
+    
+    return end_date
+
+
+# %% ../nbs/core.ipynb 8
 def plaid_post(
     endpoint: str, # The specific Plaid API endpoint (e.g., "accounts/get"), refer to [Plaid API Docs](https://plaid.com/docs/api/)
     payload: Dict[str, Any], # The JSON payload to be sent with the request
@@ -99,7 +137,7 @@ def get_account_transactions(
         raise
 
 
-# %% ../nbs/core.ipynb 8
+# %% ../nbs/core.ipynb 10
 def get_account_df(
     accounts_response: dict # Dictionary object containing accounts
 ) -> pd.DataFrame: # Returns  Dataframe of individual account
@@ -141,7 +179,7 @@ def get_transactions_df(
     return pd.json_normalize(transactions_list)
 
 
-# %% ../nbs/core.ipynb 10
+# %% ../nbs/core.ipynb 12
 def db_conn(
 ) -> psycopg2.extensions.connection:  # psycopg2 connection to database
     """
@@ -414,8 +452,9 @@ def get_last_successful_refresh(
         print(f"There was an error in get_last_successful_refresh():\n{e}")
         return []
     
-def update_last_refresh(success=True, # Assumes that refresh was successful
-                        msg="Refresh was successful" # Refresh message
+def update_last_refresh(success:bool=True, # Assumes that refresh was successful
+                        msg:str="Refresh was successful", # Refresh message
+                        ref_type:str=None, # Type of refresh one of ['Transaction', 'Balance_Hist]
     )-> None:
     """
     Update database to log refresh time and status. If an error is thrown, the `msg` committed to database will print stack trace
@@ -423,8 +462,8 @@ def update_last_refresh(success=True, # Assumes that refresh was successful
     try:
         # Define the SQL query
         query = """
-        INSERT INTO public.fin_refresh (refresh_time, refresh_status, refresh_description)
-        VALUES (%s, %s, %s);
+        INSERT INTO public.fin_refresh (refresh_time, refresh_status, refresh_description, refresh_type)
+        VALUES (%s, %s, %s, %s);
         """
         refresh_time = datetime.now()
 
@@ -434,11 +473,12 @@ def update_last_refresh(success=True, # Assumes that refresh was successful
             return
 
         with connection.cursor() as cursor:
-            cursor.execute(query, (refresh_time, success, msg))
+            cursor.execute(query, (refresh_time, success, msg, ref_type))
             connection.commit()
             print("Refresh record successfully inserted into the database.")
     except Exception as e:
         print(f"There was an error in update_last_refresh():\n{e}")
+
 
 def insert_new_budget(
         name: str, # String Budget Name
@@ -450,9 +490,12 @@ def insert_new_budget(
     """
     Insert a new budget record into the database.
     """
-    if cadence not in ['weekly', 'biweekly', 'monthly', 'yearly'] or date_of_week not in ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']:
-        print("Parameters provided is not valid. See https://billthan.github.io/jupyter-finance/core.html#insert_new_budget")    
-        return
+        
+    # Validate the inputs
+    if cadence not in ['weekly', 'biweekly', 'monthly']:
+        raise ValueError("Invalid refresh cadence. Must be one of ['weekly', 'biweekly', 'monthly'].")
+    if date_of_week not in ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']:
+        raise ValueError("Invalid refresh day of week. Must be one of ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].")
     
     try:
         # Define the SQL query
@@ -484,7 +527,99 @@ def get_all_active_budgets()-> pd.DataFrame:
     """
     return db_sql("SELECT * FROM budget WHERE is_deleted = false")
 
-# %% ../nbs/core.ipynb 12
+def get_budget_details(
+        id:int # budget_id 
+)-> Dict: # returns a dictionary object with budgetting details
+    """
+    Returns dictionary with budget detail information with provided `budget_id`
+    """
+    try:
+        # Validate the ID is numeric
+        if not isinstance(id, int):
+            raise ValueError("The provided ID must be an integer.")
+        
+        query = f"SELECT * FROM budget WHERE id = {id};"
+        result_df = db_sql(query)
+        
+        if result_df.empty:
+            print(f"No budget found with ID: {id}")
+            return {}
+        
+        budget_details = result_df.iloc[0].to_dict()
+        return budget_details
+    except Exception as e:
+        print(f"Error in get_budget_details(): {e}")
+        return {}   
+    
+def get_latest_budget_batch(
+        id:int # budget_id 
+)-> Dict: # returns a dictionary object with latest budget batch detail
+    """
+    Returns dictionary with latest budget batch information with provided `budget_id`
+    """
+    try:
+        # Validate the ID is numeric
+        if not isinstance(id, int):
+            raise ValueError("The provided ID must be an integer.")
+        
+        query = f"SELECT * FROM public.budget_batch WHERE budget_id={id} ORDER BY end_date DESC LIMIT 1;"
+        result_df = db_sql(query)
+        if result_df.empty:
+            print(f"No budget batch found with ID: {id}")
+            return {}
+        
+        latest_batch = result_df.iloc[0].to_dict()
+        return latest_batch
+    except Exception as e:
+        print(f"Error in get_latest_budget_batch(): {e}")
+        return {}   
+
+
+def insert_new_budget_batch(
+        budget_id: int,  # Integer ID of the budget 
+) -> None:
+    """
+    Insert a new budget batch record into the database.
+    """
+    # if a current budget batch exists - return
+    latest_batch = get_latest_budget_batch(budget_id)
+
+    if latest_batch != {} and latest_batch['end_date'] > datetime.today():
+        print(f"There is already a batch active for budget_id ({budget_id}), which ends on {latest_batch['end_date']}")
+        return
+
+    try:
+        # check what type of refresh the budget is
+        budget_details =  get_budget_details(budget_id)
+        # Start date will depend whether a batch has existed or not.
+        start_date = datetime.today()
+        if latest_batch != {}:
+            print(f"The last batch ended on {latest_batch['end_date']}.")
+            start_date=latest_batch['end_date']
+        end_date = calculate_end_date(start_date, budget_details)
+
+        query = """
+        INSERT INTO budget_batch (budget_id, start_date, end_date, current_balance, under_limit)
+        VALUES (%s, %s, %s, %s, %s);
+        """
+
+        connection = db_conn()
+        if connection is None:
+            print("Failed to connect to the database. insert_new_budget_batch()")
+            return
+        
+        with connection.cursor() as cursor:
+            cursor.execute(query, (budget_id, start_date, end_date, 0, True))
+            connection.commit()
+            print(f"Budget batch ({budget_id}) successfully inserted into the database.")
+    except Exception as e:
+        print(f"Error in insert_new_budget_batch(): {e}")
+    finally:
+        if connection:
+            connection.close()
+
+
+# %% ../nbs/core.ipynb 14
 def generate_link_token(
     email: str,  # The user's email address
     phone: str   # The user's phone number
@@ -576,7 +711,15 @@ def get_and_save_public_token(
         print(f"There was an error while saving account information in get_and_save_public_token:\n{e}")
 
 
-# %% ../nbs/core.ipynb 14
+# %% ../nbs/core.ipynb 16
+def run_budgetting_tasks() -> None:
+    budget_df = get_all_active_budgets()
+
+    for _, budget in budget_df.iterrows():
+        insert_new_budget_batch(budget["id"])
+    
+    print("Validated all budgetting batches for today.")
+        
 def get_and_save_all_account_transactions(first_time=False) -> None:
     """
     Retrieves all account transactions for stored public access tokens
@@ -599,6 +742,7 @@ def get_and_save_all_account_transactions(first_time=False) -> None:
         if first_time:
             transactions_df = get_transactions_df(access_tokens)
             insert_transactions_df(transactions_df)
+            update_last_refresh(ref_type="Transaction")
 
         # Step 2B: Incremental load
         else:
@@ -611,12 +755,12 @@ def get_and_save_all_account_transactions(first_time=False) -> None:
                 transactions_df = get_transactions_df(access_tokens, start_date, datetime.today().strftime('%Y-%m-%d'))
                 insert_transactions_df(transactions_df)
                 print("Successfully retrieved and saved all account transactions.")
-                update_last_refresh()
+                update_last_refresh(ref_type="Transaction")
             else:
                 print("Data was already refreshed today.")
 
     except Exception as e:
-        update_last_refresh(False, e)
+        update_last_refresh(False, e, ref_type="Transaction")
         print(f"An error occurred in get_and_save_all_account_transactions:\n{e}")
 
 
@@ -643,12 +787,12 @@ def get_and_save_balance_history() -> None:
 
         # Step 3: Update account balance history in the database
         upsert_account_balances_df(accounts_df)
-
+        update_last_refresh(ref_type="Balance_Hist")
     except Exception as e:
         print(f"An error occurred in get_and_save_balance_history()\n{e}")
 
 
-# %% ../nbs/core.ipynb 15
+# %% ../nbs/core.ipynb 17
 def about():
     """
     Print environmental details for this instance of `jupyter-finance`

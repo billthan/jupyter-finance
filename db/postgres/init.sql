@@ -51,15 +51,9 @@ CREATE TABLE transactions (
 
 );
 
--- Analytical views
-
-CREATE VIEW v_latest_account_balance AS
-SELECT DISTINCT ON (account_id) *
-FROM accounts_balance_history
-ORDER BY account_id, balances_datetime DESC;
-
 CREATE TABLE fin_refresh (
     id SERIAL PRIMARY KEY,  
+    refresh_type VARCHAR(20),
     refresh_time TIMESTAMP,
 	refresh_status boolean,
 	refresh_description VARCHAR(255)
@@ -93,4 +87,21 @@ CREATE TABLE budgeted_transaction (
     verified_date TIMESTAMP,                      
     CONSTRAINT fk_batch FOREIGN KEY (batch_id) REFERENCES budget_batch(id) ON DELETE CASCADE,
     CONSTRAINT fk_transaction FOREIGN KEY (transaction_id) REFERENCES transactions(transaction_id)
+);
+
+
+-- Analytical views
+
+CREATE VIEW v_latest_account_balance AS
+SELECT DISTINCT ON (account_id) *
+FROM accounts_balance_history
+ORDER BY account_id, balances_datetime DESC;
+
+CREATE VIEW v_lastest_budget_batches AS
+SELECT *
+FROM public.budget_batch bb
+WHERE bb.end_date = (
+    SELECT MAX(end_date)
+    FROM public.budget_batch bb_sub
+    WHERE bb_sub.budget_id = bb.budget_id
 );
