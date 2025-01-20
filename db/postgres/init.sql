@@ -51,15 +51,9 @@ CREATE TABLE transactions (
 
 );
 
--- Analytical views
-
-CREATE VIEW v_latest_account_balance AS
-SELECT DISTINCT ON (account_id) *
-FROM accounts_balance_history
-ORDER BY account_id, balances_datetime DESC;
-
 CREATE TABLE fin_refresh (
     id SERIAL PRIMARY KEY,  
+    refresh_type VARCHAR(20),
     refresh_time TIMESTAMP,
 	refresh_status boolean,
 	refresh_description VARCHAR(255)
@@ -90,7 +84,80 @@ CREATE TABLE budgeted_transaction (
     id SERIAL PRIMARY KEY,  
     batch_id INT NOT NULL,                     
     transaction_id VARCHAR(255) NOT NULL,        
-    verified_date TIMESTAMP,                      
+    verified_date TIMESTAMP,
+    CONSTRAINT unique_transaction_id UNIQUE (transaction_id),               
     CONSTRAINT fk_batch FOREIGN KEY (batch_id) REFERENCES budget_batch(id) ON DELETE CASCADE,
     CONSTRAINT fk_transaction FOREIGN KEY (transaction_id) REFERENCES transactions(transaction_id)
 );
+
+
+-- Analytical views
+
+CREATE VIEW v_latest_account_balance AS
+SELECT DISTINCT ON (account_id) *
+FROM accounts_balance_history
+ORDER BY account_id, balances_datetime DESC;
+
+CREATE VIEW v_lastest_budget_batches AS
+SELECT *
+FROM public.budget_batch bb
+WHERE bb.end_date = (
+    SELECT MAX(end_date)
+    FROM public.budget_batch bb_sub
+    WHERE bb_sub.budget_id = bb.budget_id
+);
+
+
+CREATE OR REPLACE PROCEDURE sp_update_batch_balances()
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Update current_balance for each budget_batch
+    UPDATE budget_batch bb
+    SET current_balance = (
+        SELECT COALESCE(SUM(t.amount), 0)
+        FROM budgeted_transaction bt
+        JOIN transactions t ON bt.transaction_id = t.transaction_id
+        WHERE bt.batch_id = bb.id
+    )
+    WHERE EXISTS (
+        SELECT 1
+        FROM budgeted_transaction bt
+        WHERE bt.batch_id = bb.id
+    );
+
+    -- Adjust under_limit for each budget_batch based on the budget's balance_limit
+    UPDATE budget_batch bb
+    SET 
+        current_balance = (
+            SELECT COALESCE(SUM(t.amount), 0)
+            FROM budgeted_transaction bt
+            JOIN transactions t ON bt.transaction_id = t.transaction_id
+            WHERE bt.batch_id = bb.id
+        ),
+        under_limit = (
+            CASE
+                WHEN (
+                    SELECT COALESCE(SUM(t.amount), 0)
+                    FROM budgeted_transaction bt
+                    JOIN transactions t ON bt.transaction_id = t.transaction_id
+                    WHERE bt.batch_id = bb.id
+                ) <= (
+                    SELECT b.balance_limit
+                    FROM budget b
+                    WHERE b.id = bb.budget_id
+                )
+                THEN TRUE
+                ELSE FALSE
+            END
+        )
+    WHERE EXISTS (
+        SELECT 1
+        FROM budgeted_transaction bt
+        WHERE bt.batch_id = bb.id
+    );
+
+    -- Return the latest budget batches with the updated balances
+    SELECT id, budget_id, start_date, end_date, current_balance, under_limit, update_time
+    FROM public.v_lastest_budget_batches;
+END $$;
