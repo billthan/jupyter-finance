@@ -7,7 +7,8 @@ __all__ = ['PLAID_COUNTRY_CODES', 'PLAID_PRODUCTS', 'PLAID_CLIENT_ID', 'PLAID_SE
            'get_accounts_df', 'get_transactions_df', 'db_conn', 'db_sql', 'get_stored_public_access_tokens',
            'insert_account_df', 'insert_transactions_df', 'upsert_account_balances_df', 'get_last_successful_refresh',
            'update_last_refresh', 'insert_new_budget', 'get_all_active_budgets', 'get_budget_details',
-           'get_latest_budget_batch', 'insert_new_budget_batch', 'generate_link_token', 'get_and_save_public_token',
+           'get_latest_budget_batch', 'insert_new_budget_batch', 'get_latest_batch_id', 'insert_budgetted_transaction',
+           'get_budget_rules', 'generate_link_token', 'get_and_save_public_token', 'run_budgetting_rules',
            'run_budgetting_tasks', 'get_and_save_all_account_transactions', 'get_and_save_balance_history', 'about']
 
 # %% ../nbs/core.ipynb 3
@@ -485,7 +486,8 @@ def insert_new_budget(
         description: str, # String Budget Description
         limit: float, # Maximum value for Budget
         cadence: str = "weekly", # String, one of ['weekly', 'biweekly', 'monthly', 'yearly']
-        date_of_week: str ="sun" # String, one of [ 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] 
+        date_of_week: str ="sun", # String, one of [ 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] 
+        rules: str=None # String, representing latter half of SQL query to define the types of transactions to be automatically associated
 )-> None:
     """
     Insert a new budget record into the database.
@@ -500,8 +502,8 @@ def insert_new_budget(
     try:
         # Define the SQL query
         query = """
-        INSERT INTO budget (name, description, balance_limit, refresh_cadence, refresh_day_of_week, is_deleted)
-        VALUES (%s, %s, %s, %s, %s, False);
+        INSERT INTO budget (name, description, balance_limit, refresh_cadence, refresh_day_of_week, rules, is_deleted)
+        VALUES (%s, %s, %s, %s, %s, %s, False);
         """
 
         # Establish the database connection
@@ -511,7 +513,7 @@ def insert_new_budget(
             return
         # Execute the query
         with connection.cursor() as cursor:
-            cursor.execute(query, (name, description, limit, cadence, date_of_week))
+            cursor.execute(query, (name, description, limit, cadence, date_of_week, rules))
             connection.commit()
             print("Budget successfully inserted into the database.")
     except Exception as e:
@@ -618,6 +620,69 @@ def insert_new_budget_batch(
         if connection:
             connection.close()
 
+def get_latest_batch_id(
+        budget_id:int # integer of `budget_id`
+)->int: # integer of `batch_id`
+    """
+    Lookup the latest `batch_id` associated with a `budget_id`
+    """
+    query = f"SELECT id from v_lastest_budget_batches WHERE budget_id={budget_id};"
+    result_df = db_sql(query)
+    if result_df.empty:
+        print(f"No budget batch found with ID: {id}")
+        return {}
+    latest_batch = result_df.iloc[0].to_dict()
+    return latest_batch
+
+def insert_budgetted_transaction(
+        batch_id: int,  # Integer ID of the batch
+        transaction_id: str, # ID associated with transaction
+) -> None:
+    """
+    Insert a new budgetted transaction into the database.
+    """
+    try:
+        query = """
+        INSERT INTO budgeted_transaction (batch_id, transaction_id)
+        VALUES (%s, %s);
+        """
+        update_query = """
+        UPDATE transactions
+        SET budget_run = TRUE
+        WHERE transaction_id = %s;
+        """
+
+        connection = db_conn()
+        if connection is None:
+            print("Failed to connect to the database. insert_budgetted_transaction()")
+            return
+        
+        with connection.cursor() as cursor:
+            cursor.execute(query, (batch_id, transaction_id))
+            cursor.execute(update_query, (transaction_id,))
+
+            connection.commit()
+    except Exception as e:
+        print(f"Error in insert_budgetted_transaction(): {e}")
+    finally:
+        if connection:
+            connection.close()
+
+def get_budget_rules( 
+)-> Dict: # Dict item containing the budget rules associated with the latest batches
+    """
+    Query the database and return python dictionary of the rules associated with the latest batches
+    """
+    try:
+        rules = {}
+        active_budgets = db_sql("SELECT id FROM v_lastest_budget_batches;")
+        for _, budget in active_budgets.iterrows():
+            rules[budget['id'].item()] = db_sql(f"SELECT rules FROM budget WHERE id={budget['id'].item()};")['rules'].item()
+
+        return rules
+    except Exception as e:
+        print(f"Error in get_budget_rules(): {e}")
+    return {}
 
 # %% ../nbs/core.ipynb 14
 def generate_link_token(
@@ -712,13 +777,29 @@ def get_and_save_public_token(
 
 
 # %% ../nbs/core.ipynb 16
+def run_budgetting_rules()->None:
+    """
+    Automatically assign transactions to budgets based on pre-determined rules.
+    These rules are not yet 'validated'
+    """
+    rules = get_budget_rules()
+    for rule in rules:
+        batch_id = get_latest_batch_id(rule)['id']
+        transactions = db_sql(f"SELECT * from transactions WHERE ({rules[rule]}) AND budget_run = False;")
+        for _, record in transactions.iterrows():
+            insert_budgetted_transaction(batch_id, record['transaction_id'])
+    
+        print(f"Applied {transactions.shape[0]} transactions to the rule:\n     {rules[rule]}")
+
 def run_budgetting_tasks() -> None:
     budget_df = get_all_active_budgets()
 
     for _, budget in budget_df.iterrows():
         insert_new_budget_batch(budget["id"])
-    
+        
+    run_budgetting_rules()
     print("Validated all budgetting batches for today.")
+
         
 def get_and_save_all_account_transactions(first_time=False) -> None:
     """
@@ -792,7 +873,7 @@ def get_and_save_balance_history() -> None:
         print(f"An error occurred in get_and_save_balance_history()\n{e}")
 
 
-# %% ../nbs/core.ipynb 17
+# %% ../nbs/core.ipynb 18
 def about():
     """
     Print environmental details for this instance of `jupyter-finance`
