@@ -47,6 +47,7 @@ CREATE TABLE transactions (
     website VARCHAR(255),
     personal_finance_category_detailed VARCHAR(255),
     personal_finance_category VARCHAR(255),
+    budget_run BOOLEAN DEFAULT FALSE,
     CONSTRAINT fk_account FOREIGN KEY (account_id) REFERENCES accounts(account_id)
 
 );
@@ -65,7 +66,8 @@ CREATE TABLE budget (
     description VARCHAR(255),                      
     balance_limit NUMERIC(10, 2) NOT NULL,         
     refresh_cadence VARCHAR(20) NOT NULL,          
-    refresh_day_of_week VARCHAR(10),             
+    refresh_day_of_week VARCHAR(10),
+    rules VARCHAR(255),       
     is_deleted BOOLEAN DEFAULT FALSE              
 );
 
@@ -156,8 +158,5 @@ BEGIN
         FROM budgeted_transaction bt
         WHERE bt.batch_id = bb.id
     );
-
-    -- Return the latest budget batches with the updated balances
-    SELECT id, budget_id, start_date, end_date, current_balance, under_limit, update_time
-    FROM public.v_lastest_budget_batches;
+    
 END $$;
