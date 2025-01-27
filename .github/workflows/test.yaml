@@ -37,6 +37,7 @@ jobs:
           export POSTGRES_ENCRYPTION_KEY=TEST
           export POSTGRES_PASSWORD=TEST
           export JUPYTER_LAB_TOKEN=TEST
+          export QUARTO_CHROMIUM_HEADLESS_MODE=none
 
           echo "Starting test..."
           nbdev_test
