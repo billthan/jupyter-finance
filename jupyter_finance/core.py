@@ -3,18 +3,21 @@
 # %% auto 0
 __all__ = ['PLAID_COUNTRY_CODES', 'PLAID_PRODUCTS', 'PLAID_CLIENT_ID', 'PLAID_SECRET', 'PLAID_ENV', 'PLAID_BASE_URL',
            'POSTGRES_DB', 'POSTGRES_HOST', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_ENCRYPTION_KEY',
-           'calculate_end_date', 'plaid_post', 'get_account', 'get_account_transactions', 'get_account_df',
-           'get_accounts_df', 'get_transactions_df', 'db_conn', 'db_sql', 'get_stored_public_access_tokens',
-           'insert_account_df', 'insert_transactions_df', 'upsert_account_balances_df', 'get_last_successful_refresh',
-           'update_last_refresh', 'insert_new_budget', 'get_all_active_budgets', 'get_budget_details',
-           'get_latest_budget_batch', 'insert_new_budget_batch', 'get_latest_batch_id', 'insert_budgetted_transaction',
-           'get_budget_rules', 'generate_link_token', 'get_and_save_public_token', 'run_budgetting_rules',
+           'SQL_ENGINE', 'calculate_end_date', 'plaid_post', 'get_account', 'get_account_transactions',
+           'get_account_df', 'get_accounts_df', 'get_transactions_df', 'db_conn', 'db_sql',
+           'get_stored_public_access_tokens', 'insert_account_df', 'insert_transactions_df',
+           'upsert_account_balances_df', 'get_last_successful_refresh', 'update_last_refresh', 'insert_new_budget',
+           'get_all_active_budgets', 'get_budget_details', 'get_latest_budget_batch', 'insert_new_budget_batch',
+           'get_latest_batch_id', 'insert_budgetted_transaction', 'get_budget_rules', 'run_sp_update_batch_balances',
+           'upsert_dataframe_to_db', 'generate_link_token', 'get_and_save_public_token', 'run_budgetting_rules',
            'run_budgetting_tasks', 'get_and_save_all_account_transactions', 'get_and_save_balance_history', 'about']
 
 # %% ../nbs/core.ipynb 3
 import os, uuid, json, requests, psycopg2
 import pandas as pd
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, Table, MetaData
+from sqlalchemy.dialects.postgresql import insert 
+
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from typing import Optional, Dict, Any, List, Tuple
@@ -32,6 +35,8 @@ POSTGRES_HOST=os.environ['POSTGRES_HOST']
 POSTGRES_USER= os.environ['POSTGRES_USER']
 POSTGRES_PASSWORD= os.environ['POSTGRES_PASSWORD']
 POSTGRES_ENCRYPTION_KEY=os.environ['POSTGRES_ENCRYPTION_KEY']
+SQL_ENGINE =  f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}/{POSTGRES_DB}"
+
 
 # %% ../nbs/core.ipynb 6
 def calculate_end_date(
@@ -204,9 +209,7 @@ def db_sql(
     """
     Executes a defined SQL query and returns the result as a pandas DataFrame.
     """
-    engine = create_engine(
-        f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}/{POSTGRES_DB}"
-    )
+    engine = create_engine(SQL_ENGINE)
     try:
         return pd.read_sql_query(query, engine)
     except Exception as e:
@@ -585,10 +588,13 @@ def insert_new_budget_batch(
     """
     # if a current budget batch exists - return
     latest_batch = get_latest_budget_batch(budget_id)
-
-    if latest_batch != {} and latest_batch['end_date'] > datetime.today():
-        print(f"There is already a batch active for budget_id ({budget_id}), which ends on {latest_batch['end_date']}")
-        return
+    budget_updated = get_budget_details(budget_id)['update_time'] 
+    try:
+        if latest_batch and (latest_batch['end_date'] > datetime.today() and budget_updated < latest_batch['start_date']):
+            print(f"There is already a batch active for budget_id ({budget_id}), which ends on {latest_batch['end_date']}.")
+            return
+    except:
+        pass
 
     try:
         # check what type of refresh the budget is
@@ -598,6 +604,12 @@ def insert_new_budget_batch(
         if latest_batch != {}:
             print(f"The last batch ended on {latest_batch['end_date']}.")
             start_date=latest_batch['end_date']
+        try:    
+            if budget_updated > latest_batch['start_date']:
+                print(f"The budget was updated on {get_budget_details(budget_id)['update_time']} Starting new batch.")
+                start_date = datetime.today()
+        except:
+            pass
         end_date = calculate_end_date(start_date, budget_details)
 
         query = """
@@ -675,16 +687,96 @@ def get_budget_rules(
     """
     try:
         rules = {}
-        active_budgets = db_sql("SELECT id FROM v_lastest_budget_batches;")
+        # Fetch the latest budget batch IDs
+        active_budgets = db_sql("SELECT id, budget_id FROM v_lastest_budget_batches;")
+        
+        if active_budgets.empty:
+            print("No active budgets found.")
+            return rules
+        
         for _, budget in active_budgets.iterrows():
-            rules[budget['id'].item()] = db_sql(f"SELECT rules FROM budget WHERE id={budget['id'].item()};")['rules'].item()
-
+            budget_id = budget['budget_id']
+            query = f"SELECT rules FROM budget WHERE id = {budget_id};"
+            result = db_sql(query)
+            
+            if not result.empty and len(result) == 1:
+                rules[budget_id] = result.iloc[0]['rules']
+            else:
+                print(f"No rules found for budget ID {budget_id}, or multiple results returned.")
+        
         return rules
     except Exception as e:
         print(f"Error in get_budget_rules(): {e}")
-    return {}
+        return {}
 
-# %% ../nbs/core.ipynb 14
+def run_sp_update_batch_balances()->None:
+    """ 
+    Runs stored procedure sp_update_batch_balances()
+
+    """
+
+    try:
+        db = db_conn()
+        cursor = db.cursor()
+
+        cursor.execute("CALL sp_update_batch_balances()")
+        db.commit()  
+
+    except Exception as e:
+        print(f"Error in run_sp_update_batch_balances(): {e}")
+
+    finally:
+        if db:
+            db.close()
+
+
+def upsert_dataframe_to_db(
+        df: pd.DataFrame, # Data frame to be applied to database
+        table_name: str,  # table name
+        unique_key: list # primary
+) -> None:
+    """
+    Inserts or updates rows in a table based on the given DataFrame.
+
+    This function assumes the DataFrame schema is exactly the same as the table.
+    """
+
+    engine = create_engine(SQL_ENGINE)
+    metadata = MetaData()
+    metadata.reflect(bind=engine)
+    table = metadata.tables[table_name]
+
+    rows = df.to_dict(orient='records')
+
+    if not rows:
+        print("DataFrame is empty. No operation performed.")
+        return
+
+    with engine.connect() as conn:
+        trans = conn.begin() 
+        try:
+            for row in rows:
+                # Build the INSERT statement
+                stmt = insert(table).values(row)
+                update_dict = {
+                    col.name: stmt.excluded[col.name]
+                    for col in table.columns
+                    if col.name not in unique_key
+                }
+
+                # Add ON CONFLICT clause for upsert
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=unique_key,
+                    set_=update_dict
+                )
+                conn.execute(stmt)
+
+            trans.commit()  
+        except Exception as e:
+            print(f"Error in writing to DB upsert_dataframe_to_db(): {e}")
+            trans.rollback()
+
+# %% ../nbs/core.ipynb 16
 def generate_link_token(
     email: str,  # The user's email address
     phone: str   # The user's phone number
@@ -776,12 +868,14 @@ def get_and_save_public_token(
         print(f"There was an error while saving account information in get_and_save_public_token:\n{e}")
 
 
-# %% ../nbs/core.ipynb 16
+# %% ../nbs/core.ipynb 19
 def run_budgetting_rules()->None:
     """
     Automatically assign transactions to budgets based on pre-determined rules.
     These rules are not yet 'validated'
     """
+    run_sp_update_batch_balances()
+
     rules = get_budget_rules()
     for rule in rules:
         batch_id = get_latest_batch_id(rule)['id']
@@ -798,6 +892,7 @@ def run_budgetting_tasks() -> None:
         insert_new_budget_batch(budget["id"])
         
     run_budgetting_rules()
+    run_sp_update_batch_balances()
     print("Validated all budgetting batches for today.")
 
         
@@ -873,7 +968,7 @@ def get_and_save_balance_history() -> None:
         print(f"An error occurred in get_and_save_balance_history()\n{e}")
 
 
-# %% ../nbs/core.ipynb 18
+# %% ../nbs/core.ipynb 20
 def about():
     """
     Print environmental details for this instance of `jupyter-finance`
