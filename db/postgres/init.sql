@@ -68,7 +68,8 @@ CREATE TABLE budget (
     refresh_cadence VARCHAR(20) NOT NULL,          
     refresh_day_of_week VARCHAR(10),
     rules VARCHAR(255),       
-    is_deleted BOOLEAN DEFAULT FALSE              
+    is_deleted BOOLEAN DEFAULT FALSE,     
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP  
 );
 
 CREATE TABLE budget_batch (
@@ -108,6 +109,20 @@ WHERE bb.end_date = (
     FROM public.budget_batch bb_sub
     WHERE bb_sub.budget_id = bb.budget_id
 );
+
+-- Ensure updating budgets will always update the update_time 
+CREATE OR REPLACE FUNCTION update_budget_time() 
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.update_time = CURRENT_TIMESTAMP;  
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_budget_time_trigger
+BEFORE UPDATE ON budget
+FOR EACH ROW
+EXECUTE FUNCTION update_budget_time();
 
 
 CREATE OR REPLACE PROCEDURE sp_update_batch_balances()
