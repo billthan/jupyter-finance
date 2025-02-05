@@ -65,19 +65,22 @@ def calculate_end_date(
     elif cadence == 'biweekly':
         end_date = start_date + timedelta(days=days_until_target + 7)  
     elif cadence == 'monthly':
-        next_month = (start_date.month % 12) + 1
-        year_increment = (start_date.month + 1) // 13  
-        end_date = start_date.replace(
-            year=start_date.year + year_increment,
-            month=next_month
-        )
-        while end_date.weekday() != target_day:
-            end_date += timedelta(days=1)
-    
+            # Determine the next month's same-day occurrence
+            next_month = start_date.month + 1
+            next_year = start_date.year + (1 if next_month > 12 else 0)
+            next_month = 1 if next_month > 12 else next_month
+            
+            # Set initial end date to the first of the next month
+            end_date = datetime(next_year, next_month, 1)
+            
+            # Find the first occurrence of the target weekday in the new month
+            while end_date.weekday() != target_day:
+                end_date += timedelta(days=1)
+
     return end_date
 
 
-# %% ../nbs/core.ipynb 8
+# %% ../nbs/core.ipynb 10
 def plaid_post(
     endpoint: str, # The specific Plaid API endpoint (e.g., "accounts/get"), refer to [Plaid API Docs](https://plaid.com/docs/api/)
     payload: Dict[str, Any], # The JSON payload to be sent with the request
@@ -143,7 +146,7 @@ def get_account_transactions(
         raise
 
 
-# %% ../nbs/core.ipynb 10
+# %% ../nbs/core.ipynb 12
 def get_account_df(
     accounts_response: dict # Dictionary object containing accounts
 ) -> pd.DataFrame: # Returns  Dataframe of individual account
@@ -151,6 +154,8 @@ def get_account_df(
     Converts account information from the Plaid API response into a pandas DataFrame.
     """
     return pd.json_normalize(accounts_response, sep='_')
+
+
 
 def get_accounts_df(
     access_tokens: List[Tuple[str]] # List object containing access tokens
@@ -185,7 +190,7 @@ def get_transactions_df(
     return pd.json_normalize(transactions_list)
 
 
-# %% ../nbs/core.ipynb 12
+# %% ../nbs/core.ipynb 14
 def db_conn(
 ) -> psycopg2.extensions.connection:  # psycopg2 connection to database
     """
@@ -733,7 +738,7 @@ def run_sp_update_batch_balances()->None:
 def upsert_dataframe_to_db(
         df: pd.DataFrame, # Data frame to be applied to database
         table_name: str,  # table name
-        unique_key: list # primary
+        unique_key: list # primary key
 ) -> None:
     """
     Inserts or updates rows in a table based on the given DataFrame.
