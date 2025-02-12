@@ -873,7 +873,7 @@ def get_and_save_public_token(
         print(f"There was an error while saving account information in get_and_save_public_token:\n{e}")
 
 
-# %% ../nbs/core.ipynb 19
+# %% ../nbs/core.ipynb 18
 def run_budgetting_rules()->None:
     """
     Automatically assign transactions to budgets based on pre-determined rules.
@@ -973,7 +973,7 @@ def get_and_save_balance_history() -> None:
         print(f"An error occurred in get_and_save_balance_history()\n{e}")
 
 
-# %% ../nbs/core.ipynb 20
+# %% ../nbs/core.ipynb 19
 def about():
     """
     Print environmental details for this instance of `jupyter-finance`
