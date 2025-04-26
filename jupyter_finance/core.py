@@ -264,9 +264,9 @@ def insert_account_df(
         db = db_conn()
         if not db:
             return
-
         cur = db.cursor()
         for _, account in accounts_df.iterrows():
+
             cur.execute("""
                 INSERT INTO accounts (
                     account_id, 
@@ -299,7 +299,8 @@ def insert_account_df(
                 account['mask'],
                 account['name'],
                 account['official_name'],
-                account['persistent_account_id'],
+                account['account_id'], #  this is persistent_account_id  - need to deprecate this field in cases where the field does not exist in a return type
+                # https://plaid.com/docs/api/accounts/#accounts-get-response-accounts-persistent-account-id
                 account['subtype'],
                 account['type'],
                 email,

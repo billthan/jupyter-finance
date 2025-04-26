@@ -32,3 +32,5 @@ if [ -z "$LATEST_FILE" ]; then
 fi
 
 echo "New package built: $LATEST_FILE"
+
+pip install -e .
