@@ -59,4 +59,5 @@ d = { 'settings': { 'branch': 'main',
                                                                                            'jupyter_finance/core.py'),
                                       'jupyter_finance.core.upsert_dataframe_to_db': ( 'core.html#upsert_dataframe_to_db',
                                                                                        'jupyter_finance/core.py')},
+            'jupyter_finance.magic_sql': {},
             'jupyter_finance.refresh': {}}}
