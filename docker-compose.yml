@@ -49,10 +49,8 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_ENCRYPTION_KEY=${POSTGRES_ENCRYPTION_KEY}
 
-
     volumes:
       - jupyter-data:/home/jovyan/work
-      - /Users/billthan/Desktop/budget/jupyter-finance:/home/jovyan/
 
     command: start-notebook.py --NotebookApp.token='${JUPYTER_LAB_TOKEN}'
 
