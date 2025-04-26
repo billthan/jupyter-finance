@@ -4,7 +4,9 @@ website:
       - index.ipynb
       - 00_configuration.ipynb
       - 01_refresh.ipynb
+      - 02_run_sql_query.ipynb
       - core.ipynb
       - docs_budget.ipynb
       - docs_database.ipynb
       - docs_security.ipynb
+      - magic_sql.ipynb

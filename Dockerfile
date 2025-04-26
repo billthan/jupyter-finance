@@ -11,7 +11,7 @@ RUN conda install -c conda-forge \
     wheel \
     nodejs 
     
-RUN pip install --no-cache-dir mitosheet nbdev
+RUN pip install --no-cache-dir mitosheet nbdev ipython-sql
 RUN jupyter labextension enable mitosheet
 
 # copy and install jupyter-finance
