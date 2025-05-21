@@ -101,7 +101,7 @@ SELECT DISTINCT ON (account_id) *
 FROM accounts_balance_history
 ORDER BY account_id, balances_datetime DESC;
 
-CREATE VIEW v_lastest_budget_batches AS
+CREATE VIEW v_latest_budget_batches AS
 SELECT *
 FROM public.budget_batch bb
 WHERE bb.end_date = (
@@ -109,6 +109,27 @@ WHERE bb.end_date = (
     FROM public.budget_batch bb_sub
     WHERE bb_sub.budget_id = bb.budget_id
 );
+
+CREATE VIEW v_transactions_not_budgetted AS
+SELECT * from transactions where budget_run = False and amount>0;
+
+CREATE VIEW v_incoming_cashflow as 
+SELECT * FROM transactions WHERE account_id
+IN (SELECT account_id FROM accounts WHERE type IN ('depository')) AND amount < 0 ;
+
+CREATE VIEW v_liable_credit_transactions AS
+SELECT * FROM transactions WHERE account_id
+IN (SELECT account_id FROM accounts WHERE type='credit') and amount > 0 ;
+
+CREATE VIEW v_liable_loans_balance AS 
+SELECT name, balances_current
+FROM accounts left join v_latest_account_balance
+ON accounts.account_id = v_latest_account_balance.account_id where type='loan';
+
+CREATE VIEW v_investments_balance AS
+SELECT name, balances_current
+FROM accounts left join v_latest_account_balance
+ON accounts.account_id = v_latest_account_balance.account_id where type='investment';
 
 -- Ensure updating budgets will always update the update_time 
 CREATE OR REPLACE FUNCTION update_budget_time() 
