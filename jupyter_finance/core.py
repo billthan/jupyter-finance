@@ -644,7 +644,7 @@ def get_latest_batch_id(
     """
     Lookup the latest `batch_id` associated with a `budget_id`
     """
-    query = f"SELECT id from v_lastest_budget_batches WHERE budget_id={budget_id};"
+    query = f"SELECT id from v_latest_budget_batches WHERE budget_id={budget_id};"
     result_df = db_sql(query)
     if result_df.empty:
         print(f"No budget batch found with ID: {id}")
@@ -694,7 +694,7 @@ def get_budget_rules(
     try:
         rules = {}
         # Fetch the latest budget batch IDs
-        active_budgets = db_sql("SELECT id, budget_id FROM v_lastest_budget_batches;")
+        active_budgets = db_sql("SELECT id, budget_id FROM v_latest_budget_batches;")
         
         if active_budgets.empty:
             print("No active budgets found.")
