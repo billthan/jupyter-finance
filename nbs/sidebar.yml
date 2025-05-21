@@ -9,4 +9,3 @@ website:
       - docs_budget.ipynb
       - docs_database.ipynb
       - docs_security.ipynb
-      - magic_sql.ipynb

@@ -22,8 +22,11 @@ This product is in a pre-release stage.
 
 ## Developer Guide
 
-If you are new to using `nbdev` here are some useful pointers to get you
-started.
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/)
+- [act](https://github.com/nektos/act#installation)
+- [nbdev](https://nbdev.fast.ai/)
 
 ### Setup environmental variables
 
@@ -52,6 +55,12 @@ $ nbdev_prepare
 $ ./build-dist.sh
 # ensure prior instances of docker volumes are removed
 $ docker-compose up --build
+```
+
+### Running Github actions locally to test
+
+``` bash
+$ act
 ```
 
 ### Documentation
