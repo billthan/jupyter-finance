@@ -47,6 +47,10 @@ CREATE TABLE transactions (
     website VARCHAR(255),
     personal_finance_category_detailed VARCHAR(255),
     personal_finance_category VARCHAR(255),
+    user_friendly_category VARCHAR(50),
+    is_recurring BOOLEAN DEFAULT FALSE,
+    is_unusual BOOLEAN DEFAULT FALSE,
+    unusual_reason VARCHAR(255),
     budget_run BOOLEAN DEFAULT FALSE,
     CONSTRAINT fk_account FOREIGN KEY (account_id) REFERENCES accounts(account_id)
 

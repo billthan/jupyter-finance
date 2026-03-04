@@ -54,6 +54,31 @@ services:
 
     command: start-notebook.py --NotebookApp.token='${JUPYTER_LAB_TOKEN}'
 
+  streamlit:
+    build:
+      context: .
+    ports:
+      - "8501:8501"
+    networks:
+      - finance_network
+    depends_on:
+      - db
+    environment:
+      - PLAID_CLIENT_ID=${PLAID_CLIENT_ID}
+      - PLAID_SECRET=${PLAID_SECRET}
+      - PLAID_ENV=${PLAID_ENV}
+      - PLAID_PRODUCTS=${PLAID_PRODUCTS}
+      - PLAID_COUNTRY_CODES=${PLAID_COUNTRY_CODES}
+      - PLAID_REDIRECT_URI=${PLAID_REDIRECT_URI}
+      - POSTGRES_HOST=db
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_ENCRYPTION_KEY=${POSTGRES_ENCRYPTION_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL}
+    working_dir: /home/jovyan
+    command: streamlit run app/app.py --server.port=8501 --server.address=0.0.0.0
+
 networks:
   finance_network:
     driver: bridge

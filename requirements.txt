@@ -12,7 +12,7 @@ fastcore==1.7.28
 ghapi==1.0.6
 idna==3.10
 ipykernel==6.29.5
-ipython==8.31.0
+ipython==9.10.0
 jedi==0.19.2
 jupyter_client==8.6.3
 jupyter_core==5.7.2
@@ -47,3 +47,6 @@ urllib3==2.3.0
 watchdog==6.0.0
 wcwidth==0.2.13
 quarto==0.1.0
+streamlit>=1.28.0
+openai>=1.0.0
+plotly>=5.18.0

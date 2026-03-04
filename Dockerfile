@@ -11,7 +11,7 @@ RUN conda install -c conda-forge \
     wheel \
     nodejs 
     
-RUN pip install --no-cache-dir mitosheet nbdev ipython-sql
+RUN pip install --no-cache-dir mitosheet nbdev ipython-sql streamlit openai plotly
 RUN jupyter labextension enable mitosheet
 
 # copy and install jupyter-finance
@@ -20,8 +20,15 @@ RUN pip install ./latest.tar.gz
 
 # copy all notebooks to container
 COPY ./nbs/0*.ipynb /home/jovyan/work
+COPY ./nbs/agents.ipynb /home/jovyan/work
+COPY ./nbs/categorization.ipynb /home/jovyan/work
+
+# copy Streamlit app
+COPY ./app /home/jovyan/app
+
 RUN chmod -R 777 /home/jovyan/work
 
 WORKDIR /home/jovyan/work
 EXPOSE 8888
+EXPOSE 8501
 USER ${NB_UID}
