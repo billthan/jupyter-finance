@@ -16,22 +16,24 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.11.5'
       - name: Install Dependencies, set up environment, and generate docs
         run: |
           python -m pip install --upgrade pip
-          pip install -Uq git+https://github.com/fastai/ghapi.git
-          pip install -Uq git+https://github.com/fastai/fastcore.git
-          pip install -Uq git+https://github.com/fastai/execnb.git
-          pip install nbdev
-          pip install -e ".[dev]"
-          wget -nv https://www.quarto.org/download/latest/quarto-linux-amd64.deb
-          sudo dpkg -i quarto*.deb
-          rm quarto*.deb
+          # Install the pinned toolchain first so fastcore/execnb/nbdev versions
+          # stay consistent (the previous unpinned git installs pulled
+          # incompatible bleeding-edge releases and broke the docs build).
           pip install -r requirements.txt
+          pip install -e ".[dev]"
+          # Pin Quarto to a known release instead of the moving "latest" URL,
+          # which silently broke the docs build when a new version shipped.
+          QUARTO_VERSION=1.9.38
+          wget -nv "https://github.com/quarto-dev/quarto-cli/releases/download/v${QUARTO_VERSION}/quarto-${QUARTO_VERSION}-linux-amd64.deb"
+          sudo dpkg -i "quarto-${QUARTO_VERSION}-linux-amd64.deb"
+          rm "quarto-${QUARTO_VERSION}-linux-amd64.deb"
 
           # Export environment variables
           export PLAID_COUNTRY_CODES=US,CA
