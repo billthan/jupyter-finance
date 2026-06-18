@@ -15,7 +15,7 @@ __all__ = ['PLAID_COUNTRY_CODES', 'PLAID_PRODUCTS', 'PLAID_CLIENT_ID', 'PLAID_SE
 # %% ../nbs/core.ipynb 3
 import os, uuid, json, requests, psycopg2
 import pandas as pd
-from sqlalchemy import create_engine, Table, MetaData
+from sqlalchemy import create_engine, Table, MetaData, text
 from sqlalchemy.dialects.postgresql import insert 
 
 from datetime import datetime, timedelta
@@ -23,19 +23,30 @@ from dateutil.relativedelta import relativedelta
 from typing import Optional, Dict, Any, List, Tuple
 
 # %% ../nbs/core.ipynb 4
+from urllib.parse import quote_plus
+
+# Read configuration from the environment. Missing values default to empty
+# strings so the module can be *imported* (and documented/tested) without a
+# live secret store; helpers fail at call time instead of at import.
 PLAID_COUNTRY_CODES = ['CA','US']
 PLAID_PRODUCTS = ['transactions']
-PLAID_CLIENT_ID= os.environ['PLAID_CLIENT_ID']
-PLAID_SECRET= os.environ['PLAID_SECRET']
-PLAID_ENV = os.environ['PLAID_ENV']
+PLAID_CLIENT_ID = os.environ.get('PLAID_CLIENT_ID', '')
+PLAID_SECRET = os.environ.get('PLAID_SECRET', '')
+PLAID_ENV = os.environ.get('PLAID_ENV', 'sandbox')
 PLAID_BASE_URL = f'https://{PLAID_ENV}.plaid.com'
 
-POSTGRES_DB="finances"
-POSTGRES_HOST=os.environ['POSTGRES_HOST']
-POSTGRES_USER= os.environ['POSTGRES_USER']
-POSTGRES_PASSWORD= os.environ['POSTGRES_PASSWORD']
-POSTGRES_ENCRYPTION_KEY=os.environ['POSTGRES_ENCRYPTION_KEY']
-SQL_ENGINE =  f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}/{POSTGRES_DB}"
+POSTGRES_DB = "finances"
+POSTGRES_HOST = os.environ.get('POSTGRES_HOST', '')
+POSTGRES_USER = os.environ.get('POSTGRES_USER', '')
+POSTGRES_PASSWORD = os.environ.get('POSTGRES_PASSWORD', '')
+POSTGRES_ENCRYPTION_KEY = os.environ.get('POSTGRES_ENCRYPTION_KEY', '')
+
+# URL-encode credentials so passwords containing @ : / etc. cannot break out of
+# (or be injected into) the SQLAlchemy connection URL.
+SQL_ENGINE = (
+    f"postgresql+psycopg2://{quote_plus(POSTGRES_USER)}:{quote_plus(POSTGRES_PASSWORD)}"
+    f"@{POSTGRES_HOST}/{POSTGRES_DB}"
+)
 
 
 # %% ../nbs/core.ipynb 6
@@ -209,14 +220,18 @@ def db_conn(
 
 
 def db_sql(
-    query: str  # The string representation of SQL query to execute
+    query: str,                       # SQL query, using %(name)s placeholders for parameters
+    params: Optional[dict] = None     # Optional bind parameters; safely escaped by the driver
 ) -> pd.DataFrame: # Dataframe of executed SQL query
     """
-    Executes a defined SQL query and returns the result as a pandas DataFrame.
+    Executes a SQL query and returns the result as a pandas DataFrame.
+
+    Always pass dynamic values via `params` (never f-strings) so they are bound
+    by the database driver and cannot be used for SQL injection.
     """
     engine = create_engine(SQL_ENGINE)
     try:
-        return pd.read_sql_query(query, engine)
+        return pd.read_sql_query(text(query), engine, params=params or {})
     except Exception as e:
         print(f"Error: {e}")
         return pd.DataFrame()
@@ -549,8 +564,8 @@ def get_budget_details(
         if not isinstance(id, int):
             raise ValueError("The provided ID must be an integer.")
         
-        query = f"SELECT * FROM budget WHERE id = {id};"
-        result_df = db_sql(query)
+        query = "SELECT * FROM budget WHERE id = %(id)s;"
+        result_df = db_sql(query, {"id": id})
         
         if result_df.empty:
             print(f"No budget found with ID: {id}")
@@ -573,8 +588,8 @@ def get_latest_budget_batch(
         if not isinstance(id, int):
             raise ValueError("The provided ID must be an integer.")
         
-        query = f"SELECT * FROM public.budget_batch WHERE budget_id={id} ORDER BY end_date DESC LIMIT 1;"
-        result_df = db_sql(query)
+        query = "SELECT * FROM public.budget_batch WHERE budget_id = %(id)s ORDER BY end_date DESC LIMIT 1;"
+        result_df = db_sql(query, {"id": id})
         if result_df.empty:
             print(f"No budget batch found with ID: {id}")
             return {}
@@ -644,8 +659,8 @@ def get_latest_batch_id(
     """
     Lookup the latest `batch_id` associated with a `budget_id`
     """
-    query = f"SELECT id from v_latest_budget_batches WHERE budget_id={budget_id};"
-    result_df = db_sql(query)
+    query = "SELECT id FROM v_latest_budget_batches WHERE budget_id = %(budget_id)s;"
+    result_df = db_sql(query, {"budget_id": budget_id})
     if result_df.empty:
         print(f"No budget batch found with ID: {id}")
         return {}
@@ -702,8 +717,8 @@ def get_budget_rules(
         
         for _, budget in active_budgets.iterrows():
             budget_id = budget['budget_id']
-            query = f"SELECT rules FROM budget WHERE id = {budget_id};"
-            result = db_sql(query)
+            query = "SELECT rules FROM budget WHERE id = %(budget_id)s;"
+            result = db_sql(query, {"budget_id": budget_id})
             
             if not result.empty and len(result) == 1:
                 rules[budget_id] = result.iloc[0]['rules']
@@ -875,21 +890,68 @@ def get_and_save_public_token(
 
 
 # %% ../nbs/core.ipynb 18
+# Tokens that must never appear in a budget rule predicate. A rule is only ever
+# meant to be a boolean WHERE expression over the `transactions` table, so any
+# statement terminator, comment marker, or data-modifying keyword indicates an
+# attempt to break out of the intended query and is rejected outright.
+_FORBIDDEN_RULE_TOKENS = (
+    ';', '--', '/*', '*/',
+    'insert', 'update', 'delete', 'drop', 'alter', 'create', 'truncate',
+    'grant', 'revoke', 'copy', 'merge', 'call', 'do', 'union',
+    'pg_', 'information_schema',
+)
+
+
+def _validate_budget_rule(
+    rule: str  # The SQL boolean predicate stored for a budget
+) -> bool:     # True if the rule is safe to interpolate into a read-only WHERE clause
+    """
+    Defensive allow-by-shape check for a budget rule before it is used in SQL.
+
+    Rules are author-supplied SQL fragments, so this is a guardrail (not a full
+    parser): it rejects empty rules and any rule containing statement
+    terminators, comment markers, or non-SELECT keywords. Combined with the
+    read-only query wrapper in `run_budgetting_rules`, this keeps a malformed or
+    malicious rule from escalating into arbitrary SQL execution.
+    """
+    if not rule or not isinstance(rule, str) or not rule.strip():
+        return False
+    lowered = rule.lower()
+    for tok in _FORBIDDEN_RULE_TOKENS:
+        if tok in lowered:
+            print(f"Rejected unsafe budget rule (contains '{tok}'): {rule!r}")
+            return False
+    return True
+
+
 def run_budgetting_rules()->None:
     """
     Automatically assign transactions to budgets based on pre-determined rules.
-    These rules are not yet 'validated'
+
+    Each rule is validated with `_validate_budget_rule` and executed inside a
+    read-only subselect so it can only ever filter rows, never modify data.
     """
     run_sp_update_batch_balances()
 
     rules = get_budget_rules()
     for rule in rules:
+        predicate = rules[rule]
+        if not _validate_budget_rule(predicate):
+            print(f"Skipping budget {rule}: rule failed validation.")
+            continue
+
         batch_id = get_latest_batch_id(rule)['id']
-        transactions = db_sql(f"SELECT * from transactions WHERE ({rules[rule]}) AND budget_run = False;")
+        # The predicate is validated above and wrapped in a read-only SELECT.
+        # The static `budget_run` filter is appended outside the user fragment.
+        query = (
+            "SELECT * FROM transactions "
+            f"WHERE ({predicate}) AND budget_run = False;"
+        )
+        transactions = db_sql(query)
         for _, record in transactions.iterrows():
             insert_budgetted_transaction(batch_id, record['transaction_id'])
-    
-        print(f"Applied {transactions.shape[0]} transactions to the rule:\n     {rules[rule]}")
+
+        print(f"Applied {transactions.shape[0]} transactions to the rule:\n     {predicate}")
 
 def run_budgetting_tasks() -> None:
     budget_df = get_all_active_budgets()
