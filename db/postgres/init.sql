@@ -196,3 +196,16 @@ BEGIN
     );
     
 END $$;
+
+-- Persistent log of external API errors (e.g. Plaid). Lets us track and
+-- triage failures instead of only printing them to notebook output.
+CREATE TABLE api_error_log (
+    id SERIAL PRIMARY KEY,
+    error_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    source VARCHAR(50),          -- e.g. 'plaid'
+    endpoint VARCHAR(255),       -- e.g. 'transactions/get'
+    error_code VARCHAR(100),     -- provider error_code if present
+    error_type VARCHAR(100),     -- provider error_type / http status
+    error_message TEXT,          -- human-readable message
+    context TEXT                 -- optional extra context (e.g. request id)
+);

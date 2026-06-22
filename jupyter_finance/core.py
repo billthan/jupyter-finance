@@ -3,8 +3,8 @@
 # %% auto 0
 __all__ = ['PLAID_COUNTRY_CODES', 'PLAID_PRODUCTS', 'PLAID_CLIENT_ID', 'PLAID_SECRET', 'PLAID_ENV', 'PLAID_BASE_URL',
            'POSTGRES_DB', 'POSTGRES_HOST', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_ENCRYPTION_KEY',
-           'SQL_ENGINE', 'calculate_end_date', 'plaid_post', 'get_account', 'get_account_transactions',
-           'get_account_df', 'get_accounts_df', 'get_transactions_df', 'db_conn', 'db_sql',
+           'SQL_ENGINE', 'calculate_end_date', 'log_api_error', 'PlaidAPIError', 'plaid_post', 'get_account',
+           'get_account_transactions', 'get_account_df', 'get_accounts_df', 'get_transactions_df', 'db_conn', 'db_sql',
            'get_stored_public_access_tokens', 'insert_account_df', 'insert_transactions_df',
            'upsert_account_balances_df', 'get_last_successful_refresh', 'update_last_refresh', 'insert_new_budget',
            'get_all_active_budgets', 'get_budget_details', 'get_latest_budget_batch', 'insert_new_budget_batch',
@@ -87,22 +87,98 @@ def calculate_end_date(
             # Find the first occurrence of the target weekday in the new month
             while end_date.weekday() != target_day:
                 end_date += timedelta(days=1)
+    else:
+        raise ValueError(
+            f"Unsupported refresh cadence: {cadence!r}. "
+            "Must be one of ['weekly', 'biweekly', 'monthly']."
+        )
 
     return end_date
 
 
 # %% ../nbs/core.ipynb 10
+def log_api_error(
+    source: str,                 # API source, e.g. "plaid"
+    endpoint: str,               # endpoint that failed
+    error_code: str = None,      # provider error_code
+    error_type: str = None,      # provider error_type or HTTP status
+    error_message: str = None,   # human-readable message
+    context: str = None,         # optional extra context (e.g. request id)
+) -> None:
+    """
+    Record an external API error in the api_error_log table.
+
+    Best-effort: logging failures must never mask the original API error, so
+    any problem here is printed and swallowed rather than raised.
+    """
+    try:
+        conn = db_conn()
+        if conn is None:
+            print(f"[api_error_log unavailable] {source} {endpoint}: {error_message}")
+            return
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO api_error_log
+                    (source, endpoint, error_code, error_type, error_message, context)
+                VALUES (%s, %s, %s, %s, %s, %s);
+                """,
+                (source, endpoint, error_code, error_type, error_message, context),
+            )
+            conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Failed to write to api_error_log ({source} {endpoint}): {e}")
+
+
+class PlaidAPIError(Exception):
+    """Raised when the Plaid API returns an error response."""
+    pass
+
+
 def plaid_post(
     endpoint: str, # The specific Plaid API endpoint (e.g., "accounts/get"), refer to [Plaid API Docs](https://plaid.com/docs/api/)
     payload: Dict[str, Any], # The JSON payload to be sent with the request
 ) -> Dict[str, Any]: # Returns JSON response from Plaid API
     """
     Makes a POST request to the Plaid API.
+
+    On a transport error or a Plaid error response (non-2xx, or a body
+    containing an `error_code`), the failure is logged to api_error_log and a
+    PlaidAPIError is raised so callers never treat an error payload as data.
     """
-    url = f"{PLAID_BASE_URL}/{endpoint}"  
-    headers = {'Content-Type': 'application/json'} 
-    response = requests.post(url, headers=headers, data=json.dumps(payload))  
-    return response.json()  
+    url = f"{PLAID_BASE_URL}/{endpoint}"
+    headers = {'Content-Type': 'application/json'}
+
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=30)
+    except requests.RequestException as e:
+        log_api_error("plaid", endpoint, error_type="RequestException", error_message=str(e))
+        raise PlaidAPIError(f"Plaid request to {endpoint} failed: {e}") from e
+
+    try:
+        body = response.json()
+    except ValueError as e:
+        log_api_error("plaid", endpoint, error_type=str(response.status_code),
+                      error_message=f"Non-JSON response: {response.text[:500]}")
+        raise PlaidAPIError(f"Plaid {endpoint} returned non-JSON response") from e
+
+    # Plaid signals errors via HTTP status and/or an `error_code` in the body.
+    if not response.ok or (isinstance(body, dict) and body.get("error_code")):
+        log_api_error(
+            "plaid", endpoint,
+            error_code=body.get("error_code") if isinstance(body, dict) else None,
+            error_type=body.get("error_type") if isinstance(body, dict) else str(response.status_code),
+            error_message=body.get("error_message") if isinstance(body, dict) else None,
+            context=body.get("request_id") if isinstance(body, dict) else None,
+        )
+        raise PlaidAPIError(
+            f"Plaid {endpoint} error "
+            f"{body.get('error_code') if isinstance(body, dict) else response.status_code}: "
+            f"{body.get('error_message') if isinstance(body, dict) else response.text[:200]}"
+        )
+
+    return body
 
 
 def get_account(
@@ -473,10 +549,13 @@ def get_last_successful_refresh(
         LIMIT 1;
         """
 
-        return (db_sql(query)).loc[0, 'refresh_time']
+        result = db_sql(query)
+        if result.empty:
+            return None
+        return result.loc[0, 'refresh_time']
     except Exception as e:
         print(f"There was an error in get_last_successful_refresh():\n{e}")
-        return []
+        return None
     
 def update_last_refresh(success:bool=True, # Assumes that refresh was successful
                         msg:str="Refresh was successful", # Refresh message
@@ -615,8 +694,10 @@ def insert_new_budget_batch(
         if latest_batch and (latest_batch['end_date'] > datetime.today() and budget_updated < latest_batch['start_date']):
             print(f"There is already a batch active for budget_id ({budget_id}), which ends on {latest_batch['end_date']}.")
             return
-    except:
-        pass
+    except (KeyError, TypeError) as e:
+        # latest_batch may be empty or missing keys on a brand-new budget; that
+        # is expected, so continue to create the first batch.
+        print(f"No comparable existing batch for budget_id ({budget_id}): {e}")
 
     try:
         # check what type of refresh the budget is
@@ -626,11 +707,12 @@ def insert_new_budget_batch(
         if latest_batch != {}:
             print(f"The last batch ended on {latest_batch['end_date']}.")
             start_date=latest_batch['end_date']
-        try:    
+        try:
             if budget_updated > latest_batch['start_date']:
                 print(f"The budget was updated on {get_budget_details(budget_id)['update_time']} Starting new batch.")
                 start_date = datetime.today()
-        except:
+        except (KeyError, TypeError):
+            # latest_batch has no 'start_date' (first batch for this budget); keep start_date as-is.
             pass
         end_date = calculate_end_date(start_date, budget_details)
 
@@ -991,12 +1073,20 @@ def get_and_save_all_account_transactions(first_time=False) -> None:
 
         # Step 2B: Incremental load
         else:
-            start_date = get_last_successful_refresh().strftime('%Y-%m-%d')
+            last_refresh = get_last_successful_refresh()
+            if last_refresh is None:
+                # No prior successful refresh (fresh DB or query failure):
+                # fall back to a first-time full load instead of crashing.
+                print("No prior successful refresh found; performing a first-time load.")
+                transactions_df = get_transactions_df(access_tokens)
+                insert_transactions_df(transactions_df)
+                update_last_refresh(ref_type="Transaction")
+                return
+            start_date = last_refresh.strftime('%Y-%m-%d')
             start_date_obj = datetime.strptime(start_date, '%Y-%m-%d')
             today_date = datetime.today()
             date_diff = (today_date - start_date_obj).days
             if date_diff >= 1:
-                start_date = get_last_successful_refresh().strftime('%Y-%m-%d')
                 transactions_df = get_transactions_df(access_tokens, start_date, datetime.today().strftime('%Y-%m-%d'))
                 insert_transactions_df(transactions_df)
                 print("Successfully retrieved and saved all account transactions.")
