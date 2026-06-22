@@ -212,7 +212,8 @@ def db_conn(
             host=POSTGRES_HOST,
             database="finances",
             user=POSTGRES_USER,
-            password=POSTGRES_PASSWORD
+            password=POSTGRES_PASSWORD,
+            connect_timeout=10,  # fail fast instead of hanging when DB is unreachable
         )
     except psycopg2.OperationalError as e:
         print(f"Database connection skipped: {e}")
