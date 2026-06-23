@@ -306,7 +306,7 @@ def db_sql(
     Always pass dynamic values via `params` (never f-strings) so they are bound
     by the database driver and cannot be used for SQL injection.
     """
-    engine = create_engine(SQL_ENGINE)
+    engine = create_engine(SQL_ENGINE, connect_args={'connect_timeout': 10})
     try:
         return pd.read_sql_query(text(query), engine, params=params or {})
     except Exception as e:
@@ -845,7 +845,7 @@ def upsert_dataframe_to_db(
     This function assumes the DataFrame schema is exactly the same as the table.
     """
 
-    engine = create_engine(SQL_ENGINE)
+    engine = create_engine(SQL_ENGINE, connect_args={'connect_timeout': 10})
     metadata = MetaData()
     metadata.reflect(bind=engine)
     table = metadata.tables[table_name]
