@@ -9,6 +9,8 @@ echo "running nbdev_clean"
 nbdev_clean
 echo "running nbdev_export"
 nbdev_export
+echo "generating ER diagram from init.sql"
+python scripts/gen_er_diagram.py
 echo "running nbdev_readme and nbdev_docs"
 nbdev_readme
 nbdev_docs
