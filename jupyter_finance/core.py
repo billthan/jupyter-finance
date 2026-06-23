@@ -14,6 +14,7 @@ __all__ = ['PLAID_COUNTRY_CODES', 'PLAID_PRODUCTS', 'PLAID_CLIENT_ID', 'PLAID_SE
 
 # %% ../nbs/core.ipynb 3
 import os, uuid, json, requests, psycopg2
+from psycopg2.extras import execute_values
 import pandas as pd
 from sqlalchemy import create_engine, Table, MetaData, text
 from sqlalchemy.dialects.postgresql import insert 
@@ -306,7 +307,7 @@ def db_sql(
     Always pass dynamic values via `params` (never f-strings) so they are bound
     by the database driver and cannot be used for SQL injection.
     """
-    engine = create_engine(SQL_ENGINE)
+    engine = create_engine(SQL_ENGINE, connect_args={'connect_timeout': 10})
     try:
         return pd.read_sql_query(text(query), engine, params=params or {})
     except Exception as e:
@@ -414,80 +415,74 @@ def insert_transactions_df(
     transactions_df: pd.DataFrame  # A DataFrame containing transaction data
 ) -> None:
     """
-    Inserts transaction data into the database.
+    Inserts transaction data into the database in a single batched statement.
+
+    Uses psycopg2 execute_values so all rows go in one round-trip instead of
+    one INSERT per row.
     """
     try:
+        if transactions_df.empty:
+            print("No transactions to insert.")
+            return
+
         db = db_conn()
         if not db:
             return
 
-        cur = db.cursor()
-        for _, transaction in transactions_df.iterrows():
-            cur.execute("""
-                INSERT INTO transactions (
-                    transaction_id,
-                    account_id,
-                    amount,
-                    authorized_date,
-                    category_id,
-                    date,
-                    iso_currency_code,
-                    logo_url,
-                    merchant_entity_id,
-                    merchant_name,
-                    name,
-                    payment_channel,
-                    pending,
-                    personal_finance_category_icon_url,
-                    website,
-                    personal_finance_category_detailed,
-                    personal_finance_category
-                ) 
-                VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-                )
-                ON CONFLICT (transaction_id) 
-                DO UPDATE SET
-                    account_id = EXCLUDED.account_id,
-                    amount = EXCLUDED.amount,
-                    authorized_date = EXCLUDED.authorized_date,
-                    category_id = EXCLUDED.category_id,
-                    date = EXCLUDED.date,
-                    iso_currency_code = EXCLUDED.iso_currency_code,
-                    logo_url = EXCLUDED.logo_url,
-                    merchant_entity_id = EXCLUDED.merchant_entity_id,
-                    merchant_name = EXCLUDED.merchant_name,
-                    name = EXCLUDED.name,
-                    payment_channel = EXCLUDED.payment_channel,
-                    pending = EXCLUDED.pending,
-                    personal_finance_category_icon_url = EXCLUDED.personal_finance_category_icon_url,
-                    website = EXCLUDED.website,
-                    personal_finance_category_detailed = EXCLUDED.personal_finance_category_detailed,
-                    personal_finance_category = EXCLUDED.personal_finance_category;
-            """, (
-                transaction['transaction_id'],
-                transaction['account_id'],
-                transaction['amount'],
-                transaction['authorized_date'] if pd.notnull(transaction['authorized_date']) else None,
-                transaction['category_id'],
-                transaction['date'],
-                transaction['iso_currency_code'],
-                transaction['logo_url'] if pd.notnull(transaction['logo_url']) else None,
-                transaction['merchant_entity_id'] if pd.notnull(transaction['merchant_entity_id']) else None,
-                transaction['merchant_name'] if pd.notnull(transaction['merchant_name']) else None,
-                transaction['name'],
-                transaction['payment_channel'],
-                transaction['pending'],
-                transaction['personal_finance_category_icon_url'] if pd.notnull(transaction['personal_finance_category_icon_url']) else None,
-                transaction['website'] if pd.notnull(transaction['website']) else None,
-                transaction['personal_finance_category.detailed'],
-                transaction['personal_finance_category.primary']
-            ))
+        # Columns in insert order. The two nested Plaid fields map to flattened
+        # DataFrame column names produced by json_normalize.
+        cols = [
+            "transaction_id", "account_id", "amount", "authorized_date",
+            "category_id", "date", "iso_currency_code", "logo_url",
+            "merchant_entity_id", "merchant_name", "name", "payment_channel",
+            "pending", "personal_finance_category_icon_url", "website",
+            "personal_finance_category_detailed", "personal_finance_category",
+        ]
+        src_cols = {
+            "personal_finance_category_detailed": "personal_finance_category.detailed",
+            "personal_finance_category": "personal_finance_category.primary",
+        }
 
+        # Build the list of row tuples, coercing pandas NaN/NaT to SQL NULL.
+        def _val(row, col):
+            key = src_cols.get(col, col)
+            v = row.get(key) if hasattr(row, "get") else row[key]
+            return None if pd.isnull(v) else v
+
+        rows = [tuple(_val(row, c) for c in cols) for _, row in transactions_df.iterrows()]
+
+        insert_sql = """
+            INSERT INTO transactions (
+                transaction_id, account_id, amount, authorized_date, category_id,
+                date, iso_currency_code, logo_url, merchant_entity_id, merchant_name,
+                name, payment_channel, pending, personal_finance_category_icon_url,
+                website, personal_finance_category_detailed, personal_finance_category
+            )
+            VALUES %s
+            ON CONFLICT (transaction_id) DO UPDATE SET
+                account_id = EXCLUDED.account_id,
+                amount = EXCLUDED.amount,
+                authorized_date = EXCLUDED.authorized_date,
+                category_id = EXCLUDED.category_id,
+                date = EXCLUDED.date,
+                iso_currency_code = EXCLUDED.iso_currency_code,
+                logo_url = EXCLUDED.logo_url,
+                merchant_entity_id = EXCLUDED.merchant_entity_id,
+                merchant_name = EXCLUDED.merchant_name,
+                name = EXCLUDED.name,
+                payment_channel = EXCLUDED.payment_channel,
+                pending = EXCLUDED.pending,
+                personal_finance_category_icon_url = EXCLUDED.personal_finance_category_icon_url,
+                website = EXCLUDED.website,
+                personal_finance_category_detailed = EXCLUDED.personal_finance_category_detailed,
+                personal_finance_category = EXCLUDED.personal_finance_category;
+        """
+
+        with db.cursor() as cur:
+            execute_values(cur, insert_sql, rows, page_size=500)
         db.commit()
-        cur.close()
         db.close()
-        print(f"Successfully inserted {transactions_df.shape[0]} transactions into the database.")
+        print(f"Successfully inserted {len(rows)} transactions into the database.")
     except Exception as e:
         print(f"There was an error in insert_transactions_df():\n{e}")
 
@@ -496,41 +491,44 @@ def upsert_account_balances_df(
     accounts_df: pd.DataFrame  # A DataFrame containing account balance data
 ) -> None:
     """
-    Inserts or updates account balance history in the database.
+    Inserts account balance history in a single batched statement.
+
+    Uses psycopg2 execute_values so all rows go in one round-trip.
     """
     try:
+        if accounts_df.empty:
+            print("No account balances to insert.")
+            return
+
         db = db_conn()
         if not db:
             return
-        cur = db.cursor()
-        for _, account in accounts_df.iterrows():
-            cur.execute("""
-                INSERT INTO accounts_balance_history (
-                    account_id, 
-                    balances_available,
-                    balances_current,
-                    balances_iso_currency_code,
-                    balances_limit,
-                    balances_unofficial_currency_code,
-                    balances_datetime
-                ) 
-                VALUES (
-                    %s, %s, %s, %s, %s, %s, %s
-                );
-            """, (
-                account['account_id'],
-                account['balances_available'],
-                account['balances_current'],
-                account['balances_iso_currency_code'],
-                account['balances_limit'],
-                account['balances_unofficial_currency_code'],
-                datetime.now(),
-            ))
 
+        now = datetime.now()
+        cols = [
+            "account_id", "balances_available", "balances_current",
+            "balances_iso_currency_code", "balances_limit",
+            "balances_unofficial_currency_code",
+        ]
+        rows = [
+            tuple(None if pd.isnull(account[c]) else account[c] for c in cols) + (now,)
+            for _, account in accounts_df.iterrows()
+        ]
+
+        insert_sql = """
+            INSERT INTO accounts_balance_history (
+                account_id, balances_available, balances_current,
+                balances_iso_currency_code, balances_limit,
+                balances_unofficial_currency_code, balances_datetime
+            )
+            VALUES %s;
+        """
+
+        with db.cursor() as cur:
+            execute_values(cur, insert_sql, rows, page_size=500)
         db.commit()
-        cur.close()
         db.close()
-        print(f"Successfully updated {accounts_df.shape[0]} account balances into the database as of {datetime.now()}")
+        print(f"Successfully updated {len(rows)} account balances into the database as of {now}")
 
     except Exception as e:
         print(f"There was an error in upsert_account_balances_df():\n{e}")
@@ -845,7 +843,7 @@ def upsert_dataframe_to_db(
     This function assumes the DataFrame schema is exactly the same as the table.
     """
 
-    engine = create_engine(SQL_ENGINE)
+    engine = create_engine(SQL_ENGINE, connect_args={'connect_timeout': 10})
     metadata = MetaData()
     metadata.reflect(bind=engine)
     table = metadata.tables[table_name]
