@@ -11,6 +11,9 @@ echo "running nbdev_export"
 nbdev_export
 echo "generating ER diagram from init.sql"
 python3 scripts/gen_er_diagram.py
+echo "rendering ER diagram to SVG (mermaid-cli)"
+npx -y @mermaid-js/mermaid-cli@11 -i nbs/db_schema.mmd -o nbs/db_schema.svg -p scripts/puppeteer-config.json
+npx -y @mermaid-js/mermaid-cli@11 -i nbs/budget_flow.mmd -o nbs/budget_flow.svg -p scripts/puppeteer-config.json
 echo "running nbdev_readme and nbdev_docs"
 nbdev_readme
 nbdev_docs

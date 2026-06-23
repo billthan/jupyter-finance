@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- PLACEHOLDER. Regenerated from nbs/db_schema.mmd by build-dist.sh
+     (npx @mermaid-js/mermaid-cli). Run ./build-dist.sh to produce the real
+     ER diagram. Do not hand-edit. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="120" viewBox="0 0 640 120" role="img" aria-label="Database ER diagram placeholder">
+  <rect width="640" height="120" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="320" y="50" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#24292f">Database ER diagram</text>
+  <text x="320" y="78" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#57606a">Generated from db/postgres/init.sql on build (build-dist.sh)</text>
+</svg>

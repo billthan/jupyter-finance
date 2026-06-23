@@ -44,7 +44,8 @@ jobs:
           export POSTGRES_ENCRYPTION_KEY=TEST
           export POSTGRES_PASSWORD=TEST
           export JUPYTER_LAB_TOKEN=TEST
-          export QUARTO_CHROMIUM_HEADLESS_MODE=new
+          # ER diagram is a pre-rendered, committed SVG (db_schema.svg), so the
+          # docs build no longer renders Mermaid via headless Chrome.
           python scripts/gen_er_diagram.py
           nbdev_docs
 
