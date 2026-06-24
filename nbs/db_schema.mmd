@@ -15,10 +15,10 @@ erDiagram
     ACCOUNTS_BALANCE_HISTORY {
         int id PK
         varchar account_id FK
-        float balances_available
-        float balances_current
+        numeric balances_available
+        numeric balances_current
         varchar balances_iso_currency_code
-        float balances_limit
+        numeric balances_limit
         varchar balances_unofficial_currency_code
         timestamp balances_datetime
     }
@@ -26,7 +26,7 @@ erDiagram
     TRANSACTIONS {
         varchar transaction_id PK
         varchar account_id FK
-        float amount
+        numeric amount
         date authorized_date
         varchar category_id
         date date
