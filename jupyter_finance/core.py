@@ -298,14 +298,15 @@ def db_conn(
 
 
 def db_sql(
-    query: str,                       # SQL query, using %(name)s placeholders for parameters
+    query: str,                       # SQL query, using :name placeholders for parameters (SQLAlchemy bind params)
     params: Optional[dict] = None     # Optional bind parameters; safely escaped by the driver
 ) -> pd.DataFrame: # Dataframe of executed SQL query
     """
     Executes a SQL query and returns the result as a pandas DataFrame.
 
-    Always pass dynamic values via `params` (never f-strings) so they are bound
-    by the database driver and cannot be used for SQL injection.
+    Always pass dynamic values via `params` (never f-strings), using :name
+    placeholders, so they are bound by SQLAlchemy and cannot be used for SQL
+    injection.
     """
     engine = create_engine(SQL_ENGINE, connect_args={'connect_timeout': 10})
     try:
@@ -642,7 +643,7 @@ def get_budget_details(
         if not isinstance(id, int):
             raise ValueError("The provided ID must be an integer.")
         
-        query = "SELECT * FROM budget WHERE id = %(id)s;"
+        query = "SELECT * FROM budget WHERE id = :id;"
         result_df = db_sql(query, {"id": id})
         
         if result_df.empty:
@@ -666,7 +667,7 @@ def get_latest_budget_batch(
         if not isinstance(id, int):
             raise ValueError("The provided ID must be an integer.")
         
-        query = "SELECT * FROM public.budget_batch WHERE budget_id = %(id)s ORDER BY end_date DESC LIMIT 1;"
+        query = "SELECT * FROM public.budget_batch WHERE budget_id = :id ORDER BY end_date DESC LIMIT 1;"
         result_df = db_sql(query, {"id": id})
         if result_df.empty:
             print(f"No budget batch found with ID: {id}")
@@ -687,7 +688,11 @@ def insert_new_budget_batch(
     """
     # if a current budget batch exists - return
     latest_batch = get_latest_budget_batch(budget_id)
-    budget_updated = get_budget_details(budget_id)['update_time'] 
+    budget_details = get_budget_details(budget_id)
+    if not budget_details:
+        print(f"No budget found with id {budget_id}; skipping batch creation.")
+        return
+    budget_updated = budget_details.get('update_time')
     try:
         if latest_batch and (latest_batch['end_date'] > datetime.today() and budget_updated < latest_batch['start_date']):
             print(f"There is already a batch active for budget_id ({budget_id}), which ends on {latest_batch['end_date']}.")
@@ -740,7 +745,7 @@ def get_latest_batch_id(
     """
     Lookup the latest `batch_id` associated with a `budget_id`
     """
-    query = "SELECT id FROM v_latest_budget_batches WHERE budget_id = %(budget_id)s;"
+    query = "SELECT id FROM v_latest_budget_batches WHERE budget_id = :budget_id;"
     result_df = db_sql(query, {"budget_id": budget_id})
     if result_df.empty:
         print(f"No budget batch found with ID: {id}")
@@ -798,7 +803,7 @@ def get_budget_rules(
         
         for _, budget in active_budgets.iterrows():
             budget_id = budget['budget_id']
-            query = "SELECT rules FROM budget WHERE id = %(budget_id)s;"
+            query = "SELECT rules FROM budget WHERE id = :budget_id;"
             result = db_sql(query, {"budget_id": budget_id})
             
             if not result.empty and len(result) == 1:
