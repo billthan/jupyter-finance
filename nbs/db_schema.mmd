@@ -1,0 +1,100 @@
+erDiagram
+    ACCOUNTS {
+        varchar account_id PK
+        varchar mask
+        varchar name
+        varchar official_name
+        varchar persistent_account_id
+        varchar subtype
+        varchar type
+        varchar user_email
+        varchar user_phone
+        bytea plaid_access_token "Encrypted"
+    }
+
+    ACCOUNTS_BALANCE_HISTORY {
+        int id PK
+        varchar account_id FK
+        float balances_available
+        float balances_current
+        varchar balances_iso_currency_code
+        float balances_limit
+        varchar balances_unofficial_currency_code
+        timestamp balances_datetime
+    }
+
+    TRANSACTIONS {
+        varchar transaction_id PK
+        varchar account_id FK
+        float amount
+        date authorized_date
+        varchar category_id
+        date date
+        varchar iso_currency_code
+        varchar logo_url
+        varchar merchant_entity_id
+        varchar merchant_name
+        varchar name
+        varchar payment_channel
+        boolean pending
+        varchar personal_finance_category_icon_url
+        varchar website
+        varchar personal_finance_category_detailed
+        varchar personal_finance_category
+        boolean budget_run
+    }
+
+    FIN_REFRESH {
+        int id PK
+        varchar refresh_type
+        timestamp refresh_time
+        boolean refresh_status
+        varchar refresh_description
+    }
+
+    BUDGET {
+        int id PK
+        varchar name
+        varchar description
+        numeric balance_limit
+        varchar refresh_cadence
+        varchar refresh_day_of_week
+        varchar rules
+        boolean is_deleted
+        timestamp update_time
+    }
+
+    BUDGET_BATCH {
+        int id PK
+        int budget_id FK
+        timestamp start_date
+        timestamp end_date
+        numeric current_balance
+        boolean under_limit
+        timestamp update_time
+    }
+
+    BUDGETED_TRANSACTION {
+        int id PK
+        int batch_id FK
+        varchar transaction_id FK
+        timestamp verified_date
+    }
+
+    API_ERROR_LOG {
+        int id PK
+        timestamp error_time
+        varchar source
+        varchar endpoint
+        varchar error_code
+        varchar error_type
+        text error_message
+        text context
+    }
+
+    %% Relationships (generated from FOREIGN KEY constraints)
+    ACCOUNTS ||--o{ ACCOUNTS_BALANCE_HISTORY : "has many"
+    ACCOUNTS ||--o{ TRANSACTIONS : "has many"
+    BUDGET ||--o{ BUDGET_BATCH : "has many"
+    BUDGET_BATCH ||--o{ BUDGETED_TRANSACTION : "has many"
+    TRANSACTIONS ||--o{ BUDGETED_TRANSACTION : "has many"

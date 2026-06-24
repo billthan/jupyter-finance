@@ -18,6 +18,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 INIT_SQL = ROOT / "db" / "postgres" / "init.sql"
 NOTEBOOK = ROOT / "nbs" / "docs_database.ipynb"
+MMD_FILE = ROOT / "nbs" / "db_schema.mmd"
+SVG_NAME = "db_schema.svg"   # rendered from MMD_FILE by build-dist.sh and committed
 
 # Reserved words that begin a table-level constraint rather than a column.
 _CONSTRAINT_STARTS = ("CONSTRAINT", "PRIMARY", "FOREIGN", "UNIQUE", "CHECK")
@@ -132,11 +134,16 @@ def render_mermaid(tables, relationships) -> str:
     return "\n".join(lines)
 
 
-def build_cell_source(diagram: str) -> str:
+def build_cell_source() -> str:
+    """Notebook cell that embeds the pre-rendered, committed SVG.
+
+    The diagram is rendered from db_schema.mmd to db_schema.svg by
+    build-dist.sh (mermaid-cli), so the docs build never invokes a browser.
+    """
     return (
         "<!-- AUTO-GENERATED from db/postgres/init.sql by "
         "scripts/gen_er_diagram.py. Do not edit by hand. -->\n"
-        "```{mermaid}\n" + diagram + "\n```"
+        f"![Database ER diagram]({SVG_NAME})"
     )
 
 
@@ -149,36 +156,44 @@ def main():
     sql = INIT_SQL.read_text()
     tables, rels = parse_schema(sql)
     diagram = render_mermaid(tables, rels)
-    new_source = build_cell_source(diagram)
+    new_source = build_cell_source()
 
     if args.do_print:
         print(diagram)
         return
 
     nb = json.loads(NOTEBOOK.read_text())
-    # Find the markdown cell that holds the mermaid block.
+    # Find the markdown cell holding the diagram: either the old live {mermaid}
+    # block or the new committed-SVG image embed.
     target = None
     for c in nb["cells"]:
-        if c["cell_type"] == "markdown" and "```{mermaid}" in "".join(c["source"]):
+        body = "".join(c["source"])
+        if c["cell_type"] == "markdown" and ("```{mermaid}" in body or SVG_NAME in body):
             target = c
             break
     if target is None:
-        print("ERROR: no mermaid cell found in docs_database.ipynb", file=sys.stderr)
+        print("ERROR: no diagram cell found in docs_database.ipynb", file=sys.stderr)
         sys.exit(2)
 
     current = "".join(target["source"])
+    mmd_current = MMD_FILE.read_text() if MMD_FILE.exists() else ""
+    up_to_date = (current.strip() == new_source.strip()
+                  and mmd_current.strip() == diagram.strip())
+
     if args.check:
-        if current.strip() != new_source.strip():
-            print("docs_database.ipynb ER diagram is OUT OF DATE. "
-                  "Run: python scripts/gen_er_diagram.py", file=sys.stderr)
+        if not up_to_date:
+            print("ER diagram is OUT OF DATE. Run: python scripts/gen_er_diagram.py "
+                  "(and rebuild the SVG via build-dist.sh)", file=sys.stderr)
             sys.exit(1)
         print("ER diagram is up to date.")
         return
 
+    # Write the Mermaid source (rendered to SVG by build-dist.sh) and the embed.
+    MMD_FILE.write_text(diagram + "\n")
     target["source"] = new_source.splitlines(keepends=True)
     NOTEBOOK.write_text(json.dumps(nb, indent=1, ensure_ascii=False) + "\n")
-    print(f"Updated {NOTEBOOK.relative_to(ROOT)} with {len(tables)} tables, "
-          f"{len(rels)} relationships.")
+    print(f"Wrote {MMD_FILE.relative_to(ROOT)} and embedded {SVG_NAME} "
+          f"({len(tables)} tables, {len(rels)} relationships).")
 
 
 if __name__ == "__main__":

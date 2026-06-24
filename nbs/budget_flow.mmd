@@ -1,0 +1,24 @@
+graph TD
+    Start((Start Script)) -->|Pull Transactions and Balances| PullData["Pull Transactions and Balances"]
+    PullData --> CheckCadence["Check Refresh Cadence"]
+    CheckCadence -->|Budget Reset Date Reached| CreateBatch["Create New Budget Batch"]
+    CheckCadence -->|No Action Required| AutoAssociate["Automatically Associate Transactions"]
+    CreateBatch -->|Insert New Batch into DB| UpdateDB["Update Database with New Batch"]
+    UpdateDB -->|Associate Transactions with Batches| AutoAssociate
+    AutoAssociate --> End((End Script))
+    AutoAssociate -->|Optional User Review| UserIntervention["Allow User to Review Associations"]
+    UserIntervention -->|Set Verified Status| VerifyTransaction["User Sets Verified Status"]
+    VerifyTransaction --> End((End Script))
+
+    %% Descriptions
+    Start((Start Script))
+    PullData["Fetch transaction and balance data"]
+    CheckCadence["Evaluate if today is the reset date for budget batch"]
+    CreateBatch["If condition met, create a new budget batch"]
+    UpdateDB["Insert the newly created batch into the database"]
+    AutoAssociate["Automatically associate transactions with budget batches using predefined rules"]
+    UserIntervention["Provide the user with the ability to review and modify associations optionally after automation"]
+    VerifyTransaction["User must set the 'verified' status of each transaction"]
+    End((End Script))
+
+
