@@ -19,10 +19,10 @@ CREATE TABLE accounts (
 CREATE TABLE accounts_balance_history (
     id SERIAL PRIMARY KEY,  
     account_id VARCHAR(255),
-    balances_available FLOAT,
-    balances_current FLOAT,
+    balances_available NUMERIC(14,2),
+    balances_current NUMERIC(14,2),
     balances_iso_currency_code VARCHAR(10),
-    balances_limit FLOAT,
+    balances_limit NUMERIC(14,2),
     balances_unofficial_currency_code VARCHAR(10),
     balances_datetime TIMESTAMP,
     CONSTRAINT fk_account FOREIGN KEY (account_id) REFERENCES accounts(account_id)
@@ -32,7 +32,7 @@ CREATE TABLE accounts_balance_history (
 CREATE TABLE transactions (
     transaction_id VARCHAR(255) PRIMARY KEY,
     account_id VARCHAR(255), 
-    amount FLOAT,
+    amount NUMERIC(14,2),
     authorized_date	date,
     category_id	VARCHAR(20), 
 	date date,
